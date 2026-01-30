@@ -44,9 +44,9 @@ jobs:
 
       - name: Validate generated.example outputs
         run: |
-          uv run python generate.py --examples
+          uv run alloygen --examples
           if git status --porcelain generated.example | grep -q .; then
-            echo "generated.example is out of date. Run: python generate.py --examples and commit changes."
+            echo "generated.example is out of date. Run: alloygen --examples and commit changes."
             git status --porcelain generated.example
             exit 1
           fi
