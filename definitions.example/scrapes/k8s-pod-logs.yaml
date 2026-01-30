@@ -1,0 +1,11 @@
+name: k8s-pod-logs
+type: logs
+description: Kubernetes pod logs from mounted host path
+deployment_type: kubernetes
+
+paths:
+  - /var/log/pods/*/*/*.log
+
+labels:
+  job: kubernetes-pods
+  component: pod-logs

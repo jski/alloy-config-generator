@@ -1,0 +1,11 @@
+name: traefik-metrics-k8s
+type: metrics
+description: Traefik metrics within Kubernetes cluster
+
+endpoint: traefik.traefik.svc.cluster.local:9100
+scrape_interval: 10s
+metrics_path: /metrics
+
+labels:
+  job: traefik
+  component: traefik

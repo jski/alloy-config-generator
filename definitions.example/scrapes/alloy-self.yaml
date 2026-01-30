@@ -1,0 +1,11 @@
+name: alloy-self
+type: metrics
+description: Alloy self-scrape for health and debugging
+
+endpoint: 127.0.0.1:12345
+scrape_interval: 30s
+metrics_path: /metrics
+
+labels:
+  job: alloy
+  component: alloy

@@ -1,0 +1,32 @@
+[build-system]
+requires = ["hatchling>=1.24.2"]
+build-backend = "hatchling.build"
+
+[project]
+name = "alloy-config-generator"
+version = "0.1.0"
+description = "Deterministic Grafana Alloy configuration generator."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "Jinja2>=3.1",
+  "PyYAML>=6.0",
+]
+
+[project.scripts]
+alloygen = "alloy_config_generator.cli:main"
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=7.4",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["alloy_config_generator"]
+
+[tool.hatch.build]
+include = [
+  "README.md",
+  "generate.py",
+  "alloy_config_generator/**",
+]

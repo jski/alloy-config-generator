@@ -1,0 +1,56 @@
+groups:
+  - name: homelab-baseline
+    rules:
+      - alert: HostDown
+        expr: up{job="node-exporter"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node exporter is down on {{ $labels.instance }}"
+          description: "No scrape data from node-exporter for 5 minutes."
+
+      - alert: AlloyDown
+        expr: up{job="alloy"} == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Alloy is down on {{ $labels.instance }}"
+          description: "Alloy self-scrape has been failing for 5 minutes."
+
+      - alert: K8sNodeScrapeDown
+        expr: up{job=~"kubernetes-nodes|kubernetes-cadvisor"} == 0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Kubernetes node metrics scrape is down on {{ $labels.instance }}"
+          description: "Kubelet or cAdvisor scrape failing for 10 minutes."
+
+      - alert: DiskAlmostFull
+        expr: (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay"}) < 0.10
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disk almost full on {{ $labels.instance }}"
+          description: "Filesystem is below 10% free space."
+
+      - alert: MemoryLow
+        expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) < 0.10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Memory low on {{ $labels.instance }}"
+          description: "Available memory below 10% for 10 minutes."
+
+      - alert: HighLoad
+        expr: (node_load1 / count by (instance) (node_cpu_seconds_total{mode="idle"})) > 1.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High load on {{ $labels.instance }}"
+          description: "1-minute load average > 1.5x CPU cores for 10 minutes."

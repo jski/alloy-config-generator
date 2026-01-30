@@ -1,0 +1,449 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: alloy-config-opennas
+  labels:
+    app.kubernetes.io/name: alloy
+    app.kubernetes.io/managed-by: alloy-config-generator
+    alloy-config/host: opennas
+data:
+  config.alloy: |-
+    // =========================================
+    // Grafana Alloy Configuration
+    // =========================================
+    // Host: opennas
+    // Description: opennas host running Alloy via Docker
+    // Deployment: docker
+    // 
+    // IMPORTANT: Do not edit manually. Regenerate with:
+    //   ./generate.py opennas
+    // =========================================
+
+
+    // 
+    // ========== SCRAPE: alloy-self ==========
+    // Type: metrics
+    // Description: Alloy self-scrape for health and debugging
+
+    //
+
+
+    prometheus.scrape "alloy_self" {
+      targets = [
+        {"__address__" = "127.0.0.1:12345"},
+      ]
+      forward_to = [prometheus.relabel.alloy_self.receiver]
+      scrape_interval = "30s"
+
+      clustering {
+        enabled = false
+      }
+    }
+
+
+    prometheus.relabel "alloy_self" {
+      forward_to = [
+        prometheus.remote_write.optimus_grafana.receiver,
+        prometheus.remote_write.bumblebee_grafana.receiver,
+      ]
+
+
+      // Default labels
+      rule {
+        target_label = "job"
+        replacement  = "alloy"
+      }
+      rule {
+        target_label = "env"
+        replacement  = "homelab"
+      }
+      rule {
+        target_label = "site"
+        replacement  = "lan"
+      }
+      rule {
+        target_label = "platform"
+        replacement  = "linux"
+      }
+      rule {
+        target_label = "role"
+        replacement  = "docker"
+      }
+      rule {
+        target_label = "host"
+        replacement  = "opennas"
+      }
+    }
+
+
+
+    // 
+    // ========== SCRAPE: system-logs ==========
+    // Type: logs
+    // Description: System logs from /var/log
+
+    //
+
+
+    local.file_match "system_logs" {
+      path_targets = [
+        {"__path__" = "/var/log/syslog"},
+        {"__path__" = "/var/log/messages"},
+        {"__path__" = "/var/log/auth.log"},
+      ]
+    }
+
+    loki.source.file "system_logs" {
+      targets    = local.file_match.system_logs.targets
+      forward_to = [loki.process.system_logs.receiver]
+    }
+
+
+    loki.process "system_logs" {
+      forward_to = [
+        loki.write.optimus_grafana.receiver,
+        loki.write.bumblebee_grafana.receiver,
+      ]
+
+      stage.static_labels {
+        values = {
+          job = "system-logs",
+          component = "syslog",
+          env = "homelab",
+          site = "lan",
+          platform = "linux",
+          role = "docker",
+          host = "opennas",
+        }
+      }
+    }
+
+
+
+    // 
+    // ========== SCRAPE: systemd-journal ==========
+    // Type: logs-journal
+    // Description: Systemd journal logs for diagnostics
+
+    //
+
+    discovery.relabel "systemd_journal" {
+      targets = []
+
+
+      rule {
+        source_labels = ["__journal__systemd_unit"]
+        action = "replace"
+        target_label = "systemd_unit"
+      }
+      rule {
+        source_labels = ["__journal__hostname"]
+        action = "replace"
+        target_label = "hostname"
+      }
+      rule {
+        source_labels = ["__journal_syslog_identifier"]
+        action = "replace"
+        target_label = "syslog_identifier"
+      }
+      rule {
+        source_labels = ["__journal__transport"]
+        action = "replace"
+        target_label = "transport"
+      }
+
+    }
+
+    loki.source.journal "systemd_journal" {
+      max_age       = "12h0m0s"
+      path          = "/var/log/journal"
+      relabel_rules = discovery.relabel.systemd_journal.rules
+      forward_to    = [loki.process.systemd_journal.receiver]
+      labels        = {
+        job = "systemd-journal",
+        component = "journal",
+      }
+    }
+
+    loki.process "systemd_journal" {
+      forward_to = [
+        loki.write.optimus_grafana.receiver,
+        loki.write.bumblebee_grafana.receiver,
+      ]
+
+      stage.static_labels {
+        values = {
+          env = "homelab",
+          site = "lan",
+          platform = "linux",
+          role = "docker",
+          host = "opennas",
+        }
+      }
+    }
+
+    prometheus.relabel "systemd-journal" {
+      forward_to = [
+        prometheus.remote_write.optimus-grafana.receiver,
+        prometheus.remote_write.bumblebee-grafana.receiver,
+      ]
+
+
+      // Custom relabel rules
+      rule {
+        source_labels = ["__journal__systemd_unit"]
+        action = "replace"
+        target_label = "systemd_unit"
+      }
+      rule {
+        source_labels = ["__journal__hostname"]
+        action = "replace"
+        target_label = "hostname"
+      }
+      rule {
+        source_labels = ["__journal_syslog_identifier"]
+        action = "replace"
+        target_label = "syslog_identifier"
+      }
+      rule {
+        source_labels = ["__journal__transport"]
+        action = "replace"
+        target_label = "transport"
+      }
+
+
+      // Default labels
+      rule {
+        target_label = "job"
+        replacement  = "systemd-journal"
+      }
+      rule {
+        target_label = "env"
+        replacement  = "homelab"
+      }
+      rule {
+        target_label = "site"
+        replacement  = "lan"
+      }
+      rule {
+        target_label = "platform"
+        replacement  = "linux"
+      }
+      rule {
+        target_label = "role"
+        replacement  = "docker"
+      }
+      rule {
+        target_label = "host"
+        replacement  = "opennas"
+      }
+    }
+
+
+
+    // 
+    // ========== SCRAPE: node-exporter ==========
+    // Type: metrics
+    // Description: System metrics from node_exporter
+
+    //
+
+
+    prometheus.scrape "node_exporter" {
+      targets = [
+        {"__address__" = "https://localhost:9100/metrics"},
+      ]
+      forward_to = [prometheus.relabel.node_exporter.receiver]
+      scrape_interval = "15s"
+
+      clustering {
+        enabled = false
+      }
+    }
+
+
+    prometheus.relabel "node_exporter" {
+      forward_to = [
+        prometheus.remote_write.optimus_grafana.receiver,
+        prometheus.remote_write.bumblebee_grafana.receiver,
+      ]
+
+
+      // Default labels
+      rule {
+        target_label = "job"
+        replacement  = "node-exporter"
+      }
+      rule {
+        target_label = "env"
+        replacement  = "homelab"
+      }
+      rule {
+        target_label = "site"
+        replacement  = "lan"
+      }
+      rule {
+        target_label = "platform"
+        replacement  = "linux"
+      }
+      rule {
+        target_label = "role"
+        replacement  = "docker"
+      }
+      rule {
+        target_label = "host"
+        replacement  = "opennas"
+      }
+    }
+
+
+
+    // 
+    // ========== SCRAPE: pihole-metrics ==========
+    // Type: metrics
+    // Description: Pi-hole exporter metrics
+
+    //
+
+
+    prometheus.scrape "pihole_metrics" {
+      targets = [
+        {"__address__" = "127.0.0.1:9617"},
+      ]
+      forward_to = [prometheus.relabel.pihole_metrics.receiver]
+      scrape_interval = "10s"
+
+      clustering {
+        enabled = false
+      }
+    }
+
+
+    prometheus.relabel "pihole_metrics" {
+      forward_to = [
+        prometheus.remote_write.optimus_grafana.receiver,
+        prometheus.remote_write.bumblebee_grafana.receiver,
+      ]
+
+
+      // Default labels
+      rule {
+        target_label = "job"
+        replacement  = "pihole"
+      }
+      rule {
+        target_label = "env"
+        replacement  = "homelab"
+      }
+      rule {
+        target_label = "site"
+        replacement  = "lan"
+      }
+      rule {
+        target_label = "platform"
+        replacement  = "linux"
+      }
+      rule {
+        target_label = "role"
+        replacement  = "docker"
+      }
+      rule {
+        target_label = "host"
+        replacement  = "opennas"
+      }
+    }
+
+
+
+    // 
+    // ========== SCRAPE: frigate-metrics ==========
+    // Type: metrics
+    // Description: Frigate metrics exporter
+
+    //
+
+
+    prometheus.scrape "frigate_metrics" {
+      targets = [
+        {"__address__" = "127.0.0.1:9618"},
+      ]
+      forward_to = [prometheus.relabel.frigate_metrics.receiver]
+      scrape_interval = "10s"
+
+      clustering {
+        enabled = false
+      }
+    }
+
+
+    prometheus.relabel "frigate_metrics" {
+      forward_to = [
+        prometheus.remote_write.optimus_grafana.receiver,
+        prometheus.remote_write.bumblebee_grafana.receiver,
+      ]
+
+
+      // Default labels
+      rule {
+        target_label = "job"
+        replacement  = "frigate"
+      }
+      rule {
+        target_label = "env"
+        replacement  = "homelab"
+      }
+      rule {
+        target_label = "site"
+        replacement  = "lan"
+      }
+      rule {
+        target_label = "platform"
+        replacement  = "linux"
+      }
+      rule {
+        target_label = "role"
+        replacement  = "docker"
+      }
+      rule {
+        target_label = "host"
+        replacement  = "opennas"
+      }
+    }
+
+
+
+
+    // ========== RECEIVERS ==========
+
+
+    // Loki endpoint: optimus-grafana
+    loki.write "optimus_grafana" {
+      endpoint {
+        url = "https://optimus.example.ts.net:3100/loki/api/v1/push"
+      }
+    }
+
+
+    // Loki endpoint: bumblebee-grafana
+    loki.write "bumblebee_grafana" {
+      endpoint {
+        url = "https://bumblebee.example.ts.net:3100/loki/api/v1/push"
+      }
+    }
+
+
+
+    // Prometheus endpoint: optimus-grafana
+    prometheus.remote_write "optimus_grafana" {
+      endpoint {
+        url = "https://optimus.example.ts.net:9090/api/v1/write"
+      }
+    }
+
+
+    // Prometheus endpoint: bumblebee-grafana
+    prometheus.remote_write "bumblebee_grafana" {
+      endpoint {
+        url = "https://bumblebee.example.ts.net:9090/api/v1/write"
+      }
+    }

@@ -1,0 +1,25 @@
+name: bumblebeewest
+description: Kubernetes cluster running Alloy
+deployment_type: kubernetes
+stack: kubernetes-no-prometheus
+namespace: monitoring
+enabled: true
+output_filename: bumblebeewest.alloy
+configmap_name: alloy
+
+scrapes:
+  - traefik-metrics-k8s
+
+endpoints:
+  prometheus:
+    - optimus-grafana
+    - bumblebee-grafana
+  loki:
+    - optimus-grafana
+    - bumblebee-grafana
+
+extra_labels:
+  env: oracle
+  site: remote
+  platform: kubernetes
+  cluster: bumblebeewest

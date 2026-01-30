@@ -1,0 +1,32 @@
+name: k8s-node-metrics-filtered
+type: metrics-k8s
+description: Kubernetes node metrics with relabel rules
+deployment_type: kubernetes
+
+scrape_interval: 30s
+role: node
+
+labels:
+  job: kubernetes-nodes
+  component: kubelet
+
+# Relabel rules for namespace filtering and label cardinality management
+relabel_rules:
+  # Keep only system components
+  - source_labels: [__meta_kubernetes_node_name]
+    action: keep
+    regex: "node-.*"
+  
+  # Drop metadata labels with high cardinality
+  - action: labeldrop
+    regex: __meta_kubernetes_node_.*
+  
+  # Use node name as instance label
+  - source_labels: [__meta_kubernetes_node_name]
+    target_label: instance
+    action: replace
+  
+  # Keep only metrics we care about
+  - source_labels: [__name__]
+    action: keep
+    regex: "(node_cpu_seconds_total|node_memory_MemAvailable_bytes|node_disk_io_time_seconds_total)"

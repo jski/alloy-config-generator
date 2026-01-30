@@ -1,0 +1,8 @@
+name: linux-docker
+description: Linux node running Alloy via Docker
+
+scrapes:
+  - alloy-self
+  - system-logs
+  - systemd-journal
+  - node-exporter

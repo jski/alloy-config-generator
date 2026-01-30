@@ -1,0 +1,441 @@
+// =========================================
+// Grafana Alloy Configuration
+// =========================================
+// Host: {{ host.name }}
+// Description: {{ host.description }}
+// Deployment: {{ host.deployment_type }}
+{% if timestamp %}// Generated: {{ timestamp }}
+{% endif -%}
+// 
+// IMPORTANT: Do not edit manually. Regenerate with:
+//   ./generate.py {{ host.name }}
+// =========================================
+
+{% for scrape in scrapes %}
+// 
+// ========== SCRAPE: {{ scrape.name }} ==========
+// Type: {{ scrape.type }}
+{% if scrape.description %}// Description: {{ scrape.description }}
+{% endif %}
+//
+{% if scrape.type == 'logs' %}
+{% if scrape.targets %}
+{% for target in scrape.targets %}
+local.file_match "{{ target.id }}" {
+  path_targets = [
+{%- for path in target.paths %}
+    {"__path__" = "{{ path }}"},
+{%- endfor %}
+  ]
+}
+
+loki.source.file "{{ target.id }}" {
+  targets    = local.file_match.{{ target.id }}.targets
+  forward_to = [loki.process.{{ scrape.id }}.receiver]
+}
+{% endfor %}
+{% else %}
+local.file_match "{{ scrape.id }}" {
+  path_targets = [
+{%- for path in scrape.paths %}
+    {"__path__" = "{{ path }}"},
+{%- endfor %}
+  ]
+}
+
+loki.source.file "{{ scrape.id }}" {
+  targets    = local.file_match.{{ scrape.id }}.targets
+  forward_to = [loki.process.{{ scrape.id }}.receiver]
+}
+{% endif %}
+
+loki.process "{{ scrape.id }}" {
+  forward_to = [
+{%- for endpoint in loki_endpoints %}
+    loki.write.{{ endpoint.id }}.receiver,
+{%- endfor %}
+  ]
+
+  stage.static_labels {
+    values = {
+{%- for key, value in scrape.labels.items() %}
+      {{ key }} = "{{ value }}",
+{%- endfor %}
+{%- for key, value in host.extra_labels.items() %}
+      {{ key }} = "{{ value }}",
+{%- endfor %}
+    }
+  }
+}
+
+{% elif scrape.type == 'metrics' %}
+{% if scrape.targets %}
+{% for target in scrape.targets %}
+prometheus.scrape "{{ target.id }}" {
+  targets = [
+    {"__address__" = "{{ target.address }}"{% if target.labels %},{% endif %}
+{%- if target.labels %}
+{%- for key, value in target.labels.items() %}
+    "{{ key }}" = "{{ value }}"{% if not loop.last %},{% endif %}
+{%- endfor %}
+{%- endif %}
+    },
+  ]
+  forward_to = [prometheus.relabel.{{ scrape.id }}.receiver]
+  scrape_interval = "{{ scrape.scrape_interval }}"
+{% if scrape.metrics_path %}
+  metrics_path = "{{ scrape.metrics_path }}"
+{% endif %}
+
+  clustering {
+    enabled = false
+  }
+}
+{% endfor %}
+{% else %}
+prometheus.scrape "{{ scrape.id }}" {
+  targets = [
+    {"__address__" = "{{ scrape.endpoint }}"},
+  ]
+  forward_to = [prometheus.relabel.{{ scrape.id }}.receiver]
+  scrape_interval = "{{ scrape.scrape_interval }}"
+
+  clustering {
+    enabled = false
+  }
+}
+{% endif %}
+
+prometheus.relabel "{{ scrape.id }}" {
+  forward_to = [
+{%- for endpoint in prometheus_endpoints %}
+    prometheus.remote_write.{{ endpoint.id }}.receiver,
+{%- endfor %}
+  ]
+
+{% if scrape.relabel_rules %}
+  // Custom relabel rules
+{%- for rule in scrape.relabel_rules %}
+  rule {
+{%- if rule.source_labels %}
+    source_labels = [{% for label in rule.source_labels %}"{{ label }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+    action = "{{ rule.action }}"
+{%- if rule.regex %}
+    regex = "{{ rule.regex }}"
+{%- endif %}
+{%- if rule.target_label %}
+    target_label = "{{ rule.target_label }}"
+{%- endif %}
+{%- if rule.replacement %}
+    replacement = "{{ rule.replacement }}"
+{%- endif %}
+  }
+{%- endfor %}
+
+{% endif %}
+  // Default labels
+  rule {
+    target_label = "job"
+    replacement  = "{{ scrape.labels.job }}"
+  }
+
+{%- for key, value in host.extra_labels.items() %}
+  rule {
+    target_label = "{{ key }}"
+    replacement  = "{{ value }}"
+  }
+{%- endfor %}
+}
+
+{% elif scrape.type == 'metrics-k8s' %}
+discovery.kubernetes "{{ scrape.id }}" {
+  role = "{{ scrape.role }}"
+}
+
+prometheus.scrape "{{ scrape.id }}" {
+  targets    = discovery.kubernetes.{{ scrape.id }}.targets
+  forward_to = [prometheus.relabel.{{ scrape.id }}.receiver]
+  scrape_interval = "{{ scrape.scrape_interval }}"
+{% if scrape.metrics_path %}
+  metrics_path = "{{ scrape.metrics_path }}"
+{% endif %}
+
+  clustering {
+    enabled = true
+  }
+}
+
+prometheus.relabel "{{ scrape.id }}" {
+  forward_to = [
+{%- for endpoint in prometheus_endpoints %}
+    prometheus.remote_write.{{ endpoint.id }}.receiver,
+{%- endfor %}
+  ]
+
+{% if scrape.relabel_rules %}
+  // Custom relabel rules
+{%- for rule in scrape.relabel_rules %}
+  rule {
+{%- if rule.source_labels %}
+    source_labels = [{% for label in rule.source_labels %}"{{ label }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+    action = "{{ rule.action }}"
+{%- if rule.regex %}
+    regex = "{{ rule.regex }}"
+{%- endif %}
+{%- if rule.target_label %}
+    target_label = "{{ rule.target_label }}"
+{%- endif %}
+{%- if rule.replacement %}
+    replacement = "{{ rule.replacement }}"
+{%- endif %}
+  }
+{%- endfor %}
+
+{% endif %}
+  // Default labels
+  rule {
+    target_label = "job"
+    replacement  = "{{ scrape.labels.job }}"
+  }
+
+{%- for key, value in host.extra_labels.items() %}
+  rule {
+    target_label = "{{ key }}"
+    replacement  = "{{ value }}"
+  }
+{%- endfor %}
+}
+
+{% elif scrape.type == 'logs-journal' %}
+discovery.relabel "{{ scrape.id }}" {
+  targets = []
+
+{% if scrape.relabel_rules %}
+{%- for rule in scrape.relabel_rules %}
+  rule {
+{%- if rule.source_labels %}
+    source_labels = [{% for label in rule.source_labels %}"{{ label }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+    action = "{{ rule.action }}"
+{%- if rule.regex %}
+    regex = "{{ rule.regex }}"
+{%- endif %}
+{%- if rule.target_label %}
+    target_label = "{{ rule.target_label }}"
+{%- endif %}
+{%- if rule.replacement %}
+    replacement = "{{ rule.replacement }}"
+{%- endif %}
+  }
+{%- endfor %}
+{% endif %}
+}
+
+loki.source.journal "{{ scrape.id }}" {
+  max_age       = "{{ scrape.max_age }}"
+  path          = "{{ scrape.path }}"
+  relabel_rules = discovery.relabel.{{ scrape.id }}.rules
+  forward_to    = [loki.process.{{ scrape.id }}.receiver]
+  labels        = {
+{%- for key, value in scrape.labels.items() %}
+    {{ key }} = "{{ value }}",
+{%- endfor %}
+  }
+}
+
+loki.process "{{ scrape.id }}" {
+  forward_to = [
+{%- for endpoint in loki_endpoints %}
+    loki.write.{{ endpoint.id }}.receiver,
+{%- endfor %}
+  ]
+
+  stage.static_labels {
+    values = {
+{%- for key, value in host.extra_labels.items() %}
+      {{ key }} = "{{ value }}",
+{%- endfor %}
+    }
+  }
+}
+
+prometheus.relabel "{{ scrape.name }}" {
+  forward_to = [
+{%- for endpoint in prometheus_endpoints %}
+    prometheus.remote_write.{{ endpoint.name }}.receiver,
+{%- endfor %}
+  ]
+
+{% if scrape.relabel_rules %}
+  // Custom relabel rules
+{%- for rule in scrape.relabel_rules %}
+  rule {
+{%- if rule.source_labels %}
+    source_labels = [{% for label in rule.source_labels %}"{{ label }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+    action = "{{ rule.action }}"
+{%- if rule.regex %}
+    regex = "{{ rule.regex }}"
+{%- endif %}
+{%- if rule.target_label %}
+    target_label = "{{ rule.target_label }}"
+{%- endif %}
+{%- if rule.replacement %}
+    replacement = "{{ rule.replacement }}"
+{%- endif %}
+  }
+{%- endfor %}
+
+{% endif %}
+  // Default labels
+  rule {
+    target_label = "job"
+    replacement  = "{{ scrape.labels.job }}"
+  }
+
+{%- for key, value in host.extra_labels.items() %}
+  rule {
+    target_label = "{{ key }}"
+    replacement  = "{{ value }}"
+  }
+{%- endfor %}
+}
+
+{% elif scrape.type == 'logs-k8s' %}
+discovery.kubernetes "{{ scrape.id }}" {
+  role = "{{ scrape.role }}"
+}
+
+loki.source.kubernetes "{{ scrape.id }}" {
+  targets    = discovery.kubernetes.{{ scrape.id }}.targets
+  forward_to = [loki.process.{{ scrape.id }}.receiver]
+}
+
+loki.process "{{ scrape.id }}" {
+  forward_to = [
+{%- for endpoint in loki_endpoints %}
+    loki.write.{{ endpoint.id }}.receiver,
+{%- endfor %}
+  ]
+
+  stage.static_labels {
+    values = {
+{%- for key, value in scrape.labels.items() %}
+      {{ key }} = "{{ value }}",
+{%- endfor %}
+{%- for key, value in host.extra_labels.items() %}
+      {{ key }} = "{{ value }}",
+{%- endfor %}
+    }
+  }
+}
+
+{% elif scrape.type == 'metrics-k8s-pods' %}
+discovery.kubernetes "{{ scrape.id }}" {
+  role = "{{ scrape.role }}"
+}
+
+prometheus.scrape "{{ scrape.id }}" {
+  targets    = discovery.kubernetes.{{ scrape.id }}.targets
+  forward_to = [prometheus.relabel.{{ scrape.id }}.receiver]
+  scrape_interval = "{{ scrape.scrape_interval }}"
+{% if scrape.metrics_path %}
+  metrics_path = "{{ scrape.metrics_path }}"
+{% endif %}
+
+  clustering {
+    enabled = true
+  }
+}
+
+prometheus.relabel "{{ scrape.id }}" {
+  forward_to = [
+{%- for endpoint in prometheus_endpoints %}
+    prometheus.remote_write.{{ endpoint.id }}.receiver,
+{%- endfor %}
+  ]
+
+{% if scrape.relabel_rules %}
+  // Custom relabel rules
+{%- for rule in scrape.relabel_rules %}
+  rule {
+{%- if rule.source_labels %}
+    source_labels = [{% for label in rule.source_labels %}"{{ label }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+    action = "{{ rule.action }}"
+{%- if rule.regex %}
+    regex = "{{ rule.regex }}"
+{%- endif %}
+{%- if rule.target_label %}
+    target_label = "{{ rule.target_label }}"
+{%- endif %}
+{%- if rule.replacement %}
+    replacement = "{{ rule.replacement }}"
+{%- endif %}
+  }
+{%- endfor %}
+
+{% endif %}
+  // Default labels
+  rule {
+    target_label = "job"
+    replacement  = "{{ scrape.labels.job }}"
+  }
+
+{%- for key, value in host.extra_labels.items() %}
+  rule {
+    target_label = "{{ key }}"
+    replacement  = "{{ value }}"
+  }
+{%- endfor %}
+}
+
+{% endif %}
+{% endfor %}
+
+// ========== RECEIVERS ==========
+
+{% for endpoint in loki_endpoints %}
+// Loki endpoint: {{ endpoint.name }}
+loki.write "{{ endpoint.id }}" {
+  endpoint {
+    url = "{{ endpoint.loki.url }}"
+
+{%- if endpoint.loki.auth_type == 'bearer' %}
+    authorization {
+      type = "Bearer"
+      credentials = "{{ endpoint.loki.bearer_token }}"
+    }
+{%- elif endpoint.loki.username %}
+    basic_auth {
+      username = "{{ endpoint.loki.username }}"
+      password = "{{ endpoint.loki.password }}"
+    }
+{%- endif %}
+  }
+}
+
+{% endfor %}
+{% for endpoint in prometheus_endpoints %}
+// Prometheus endpoint: {{ endpoint.name }}
+prometheus.remote_write "{{ endpoint.id }}" {
+  endpoint {
+    url = "{{ endpoint.prometheus.url }}"
+
+{%- if endpoint.prometheus.auth_type == 'bearer' %}
+    authorization {
+      type = "Bearer"
+      credentials = "{{ endpoint.prometheus.bearer_token }}"
+    }
+{%- elif endpoint.prometheus.username %}
+    basic_auth {
+      username = "{{ endpoint.prometheus.username }}"
+      password = "{{ endpoint.prometheus.password }}"
+    }
+{%- endif %}
+  }
+}
+
+{% endfor %}

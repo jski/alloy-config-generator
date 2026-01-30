@@ -1,0 +1,10 @@
+name: node-exporter
+type: metrics
+description: System metrics from node_exporter
+
+endpoint: https://localhost:9100/metrics
+scrape_interval: 15s
+
+labels:
+  job: node-exporter
+  component: system-metrics

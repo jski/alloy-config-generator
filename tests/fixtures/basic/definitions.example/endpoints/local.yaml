@@ -1,0 +1,4 @@
+name: local
+prometheus:
+  enabled: true
+  url: http://prom.example.com/api/v1/write

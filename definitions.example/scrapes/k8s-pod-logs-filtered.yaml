@@ -1,0 +1,13 @@
+name: k8s-pod-logs-filtered
+type: logs
+description: Kubernetes pod logs with namespace filtering
+deployment_type: kubernetes
+
+paths:
+  - /var/log/pods/*/*/*.log
+
+labels:
+  job: kubernetes-pod-logs
+
+# Optional: Add relabel rules for namespace filtering
+# Note: For logs, relabel happens in loki.process stage.static_labels

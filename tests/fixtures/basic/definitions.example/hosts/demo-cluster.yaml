@@ -1,0 +1,9 @@
+name: demo-cluster
+description: Demo cluster for tests
+deployment_type: docker
+endpoint: local
+scrapes:
+  - node
+extra_labels:
+  cluster: demo-cluster
+  env: test

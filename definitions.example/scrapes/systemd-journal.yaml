@@ -1,0 +1,24 @@
+name: systemd-journal
+type: logs-journal
+description: Systemd journal logs for diagnostics
+
+path: /var/log/journal
+max_age: 12h0m0s
+
+labels:
+  job: systemd-journal
+  component: journal
+
+relabel_rules:
+  - source_labels: [__journal__systemd_unit]
+    target_label: systemd_unit
+    action: replace
+  - source_labels: [__journal__hostname]
+    target_label: hostname
+    action: replace
+  - source_labels: [__journal_syslog_identifier]
+    target_label: syslog_identifier
+    action: replace
+  - source_labels: [__journal__transport]
+    target_label: transport
+    action: replace

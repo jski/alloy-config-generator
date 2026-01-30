@@ -1,0 +1,7 @@
+name: default
+description: Default monitoring stack
+
+scrapes:
+  - alloy-self
+  - system-logs
+  - node-exporter

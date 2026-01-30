@@ -1,0 +1,26 @@
+name: multi-node-exporters
+type: metrics
+description: Multiple node exporter targets
+
+targets:
+  - name: local_node_exporter
+    address: prometheus-node-exporter.prometheus.svc.cluster.local:9100
+  
+  - name: opennas_node_exporter
+    address: opennas.example.ts.net:9100
+  
+  - name: optimus_node_exporter
+    address: optimus.example.ts.net:9100
+
+scrape_interval: 10s
+metrics_path: /metrics
+
+labels:
+  job: node-exporters
+  component: node-exporter
+
+relabel_rules:
+  - source_labels: [job]
+    action: replace
+    replacement: node
+    target_label: job

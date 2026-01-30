@@ -1,0 +1,11 @@
+name: k8s-node-metrics
+type: metrics-k8s
+description: Kubernetes node metrics using service discovery
+deployment_type: kubernetes
+
+scrape_interval: 15s
+role: node
+
+labels:
+  job: kubernetes-nodes
+  component: kubelet

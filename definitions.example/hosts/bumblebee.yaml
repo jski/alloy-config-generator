@@ -1,0 +1,25 @@
+name: bumblebee
+description: Kubernetes cluster (Grafana stack) running Alloy
+deployment_type: kubernetes
+stack: kubernetes
+namespace: monitoring
+enabled: true
+output_filename: bumblebee.alloy
+configmap_name: alloy-config-bumblebee
+
+scrapes:
+  - traefik-metrics-k8s
+
+endpoints:
+  prometheus:
+    - optimus-grafana
+    - bumblebee-grafana
+  loki:
+    - optimus-grafana
+    - bumblebee-grafana
+
+extra_labels:
+  env: oracle
+  site: remote
+  platform: kubernetes
+  cluster: bumblebee

@@ -1,0 +1,9 @@
+name: k8s-pod-logs-kubernetes
+type: logs-k8s
+description: Pod-level logs via Kubernetes discovery
+deployment_type: kubernetes
+
+role: pod
+
+labels:
+  job: kubernetes-pod-logs

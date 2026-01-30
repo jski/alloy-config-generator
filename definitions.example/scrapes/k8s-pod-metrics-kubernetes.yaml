@@ -1,0 +1,11 @@
+name: k8s-pod-metrics-kubernetes
+type: metrics-k8s-pods
+description: Pod-level metrics via Kubernetes discovery
+deployment_type: kubernetes
+
+role: pod
+scrape_interval: 30s
+metrics_path: /metrics
+
+labels:
+  job: kubernetes-pod-metrics

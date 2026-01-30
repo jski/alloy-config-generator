@@ -1,0 +1,25 @@
+name: optimus
+description: Local LAN host running Grafana stack and Alloy via Docker
+deployment_type: docker
+stack: linux-docker
+enabled: true
+output_filename: optimus.alloy
+configmap_name: alloy-config-optimus
+
+scrapes:
+  - pihole-metrics
+
+endpoints:
+  prometheus:
+    - optimus-grafana
+    - bumblebee-grafana
+  loki:
+    - optimus-grafana
+    - bumblebee-grafana
+
+extra_labels:
+  env: homelab
+  site: lan
+  platform: linux
+  role: docker
+  host: optimus

@@ -1,0 +1,6 @@
+name: node
+type: metrics
+endpoint: 127.0.0.1:9100
+scrape_interval: 30s
+labels:
+  job: node

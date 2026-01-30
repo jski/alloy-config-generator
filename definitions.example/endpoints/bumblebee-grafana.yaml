@@ -1,0 +1,10 @@
+name: bumblebee-grafana
+description: Remote Kubernetes Grafana stack (bumblebee) reachable via Tailscale
+
+loki:
+  enabled: true
+  url: https://bumblebee.example.ts.net:3100/loki/api/v1/push
+
+prometheus:
+  enabled: true
+  url: https://bumblebee.example.ts.net:9090/api/v1/write

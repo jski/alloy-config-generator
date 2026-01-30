@@ -1,0 +1,12 @@
+name: k8s-node-exporter-prometheus
+type: metrics
+description: Node exporter service in the prometheus namespace
+deployment_type: kubernetes
+
+endpoint: prometheus-node-exporter.prometheus.svc.cluster.local:9100
+scrape_interval: 30s
+metrics_path: /metrics
+
+labels:
+  job: node-exporter
+  component: system-metrics

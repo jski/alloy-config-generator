@@ -1,0 +1,12 @@
+name: pihole-metrics
+type: metrics
+description: Pi-hole exporter metrics
+
+endpoint: 127.0.0.1:9617
+
+scrape_interval: 10s
+metrics_path: /metrics
+
+labels:
+  job: pihole
+  component: pihole

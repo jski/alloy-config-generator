@@ -1,0 +1,11 @@
+name: nginx
+type: logs
+description: Nginx access and error logs
+
+paths:
+  - /var/log/nginx/access.log
+  - /var/log/nginx/error.log
+
+labels:
+  job: nginx
+  component: webserver

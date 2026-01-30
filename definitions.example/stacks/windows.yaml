@@ -1,0 +1,5 @@
+name: windows
+description: Windows host with Alloy via Docker or WSL
+
+scrapes:
+  - alloy-self

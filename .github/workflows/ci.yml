@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Install dependencies
+        run: |
+          uv venv
+          uv pip install -e ".[dev]"
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Build artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          uv pip install hatch
+          uv run hatch build
+
+      - name: Upload artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+
+      - name: Validate generated.example outputs
+        run: |
+          uv run python generate.py --examples
+          if git status --porcelain generated.example | grep -q .; then
+            echo "generated.example is out of date. Run: python generate.py --examples and commit changes."
+            git status --porcelain generated.example
+            exit 1
+          fi
+
+  version-guard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Ensure version bumped for release-worthy changes
+        run: |
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+
+          release_paths=(
+            "alloy_config_generator/**"
+            "templates/**"
+            "generate.py"
+            "pyproject.toml"
+            "definitions.example/**"
+          )
+
+          if git diff --name-only "$base" "$head" -- "${release_paths[@]}" | grep -q .; then
+            base_version=$(python - <<'PY'
+          import os, subprocess, tomllib
+          base = os.environ["BASE"]
+          data = subprocess.check_output(["git", "show", f"{base}:pyproject.toml"])
+          print(tomllib.loads(data.decode())["project"]["version"])
+          PY
+            )
+
+            head_version=$(python - <<'PY'
+          import os, subprocess, tomllib
+          head = os.environ["HEAD"]
+          data = subprocess.check_output(["git", "show", f"{head}:pyproject.toml"])
+          print(tomllib.loads(data.decode())["project"]["version"])
+          PY
+            )
+
+            if [ "$base_version" = "$head_version" ]; then
+              echo "Release-worthy changes detected but project.version did not change."
+              echo "Base: $base_version"
+              echo "Head: $head_version"
+              echo "Please bump project.version in pyproject.toml."
+              exit 1
+            fi
+          fi
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}

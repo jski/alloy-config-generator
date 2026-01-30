@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv
+.pytest_cache
+
+# Generated configs and manifests
+generated/
+
+# Private definitions (keep real configs out of public repo)
+definitions/
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Secrets / local overrides
+.env
+.env.*
+*.env
+secrets/

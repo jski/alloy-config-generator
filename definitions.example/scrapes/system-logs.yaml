@@ -1,0 +1,12 @@
+name: system-logs
+type: logs
+description: System logs from /var/log
+
+paths:
+  - /var/log/syslog
+  - /var/log/messages
+  - /var/log/auth.log
+
+labels:
+  job: system-logs
+  component: syslog

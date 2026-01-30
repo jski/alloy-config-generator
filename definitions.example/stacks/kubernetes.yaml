@@ -1,0 +1,9 @@
+name: kubernetes
+description: Kubernetes monitoring stack
+
+scrapes:
+  - alloy-self
+  - k8s-pod-logs-kubernetes
+  - k8s-pod-metrics-kubernetes
+  - k8s-node-metrics-filtered
+  - k8s-node-exporter-prometheus

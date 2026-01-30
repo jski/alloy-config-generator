@@ -1,0 +1,12 @@
+name: k8s-cadvisor
+type: metrics-k8s
+description: Kubernetes cAdvisor container metrics
+deployment_type: kubernetes
+
+scrape_interval: 30s
+role: node
+metrics_path: /metrics/cadvisor
+
+labels:
+  job: kubernetes-cadvisor
+  component: cadvisor

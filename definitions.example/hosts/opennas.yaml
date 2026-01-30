@@ -1,0 +1,26 @@
+name: opennas
+description: opennas host running Alloy via Docker
+deployment_type: docker
+stack: linux-docker
+enabled: true
+output_filename: opennas.alloy
+configmap_name: alloy-config-opennas
+
+scrapes:
+  - pihole-metrics
+  - frigate-metrics
+
+endpoints:
+  prometheus:
+    - optimus-grafana
+    - bumblebee-grafana
+  loki:
+    - optimus-grafana
+    - bumblebee-grafana
+
+extra_labels:
+  env: homelab
+  site: lan
+  platform: linux
+  role: docker
+  host: opennas

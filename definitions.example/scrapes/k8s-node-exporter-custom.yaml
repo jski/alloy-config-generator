@@ -1,0 +1,13 @@
+name: k8s-node-exporter-custom
+type: metrics
+description: Node exporter service in a custom namespace
+deployment_type: kubernetes
+
+# Update namespace if your node-exporter service lives elsewhere.
+endpoint: node-exporter.monitoring.svc.cluster.local:9100
+scrape_interval: 30s
+metrics_path: /metrics
+
+labels:
+  job: node-exporter
+  component: system-metrics
