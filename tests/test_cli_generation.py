@@ -110,3 +110,24 @@ def test_manifest_hashes(tmp_path):
             artifact_path = (FIXTURE_DIR / rel_path).resolve()
             actual_hash = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
             assert actual_hash == artifact["sha256"]
+
+
+def test_manifest_hashes_with_relative_definitions_dir(tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(out_dir),
+        "--definitions-dir",
+        "definitions.example",
+        "--format",
+        "both",
+    ]
+    monkeypatch.chdir(FIXTURE_DIR)
+    subprocess.run(cmd, check=True)
+
+    manifest_path = out_dir / "manifest.json"
+    assert manifest_path.exists()

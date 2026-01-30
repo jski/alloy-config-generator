@@ -223,7 +223,10 @@ def collect_input_hashes(definitions_root):
     definitions_root = Path(definitions_root)
     input_paths = []
     if definitions_root.exists():
-        input_paths = sorted(definitions_root.glob("**/*.yaml"), key=lambda p: p.as_posix().lower())
+        input_paths = sorted(
+            (p.resolve() for p in definitions_root.glob("**/*.yaml")),
+            key=lambda p: p.as_posix().lower(),
+        )
     input_paths.extend(
         [
             root / "generate.py",
@@ -235,7 +238,7 @@ def collect_input_hashes(definitions_root):
     for path in input_paths:
         if not path.exists():
             continue
-        rel_path = path.relative_to(root).as_posix()
+        rel_path = path.resolve().relative_to(root).as_posix()
         inputs[rel_path] = hash_file(path)
 
     templates_dir = root / "templates"
