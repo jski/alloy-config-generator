@@ -14,7 +14,7 @@ xcopy /E /I definitions.example definitions
 ```
 
 ```bash
-uv tool run alloy-config-generator --all
+uv tool run --from alloy-config-generator alloygen --all --format both
 ```
 
 Optional: install globally with uv (requires PATH setup):
