@@ -9,22 +9,6 @@ import sys
 from alloy_config_generator.cli import main as cli_main
 
 
-def build_example_args(args: argparse.Namespace) -> list[str]:
-    """Build CLI args for deterministic example generation."""
-    output_dir = args.example_output_dir
-    return [
-        "--all",
-        "--definitions-dir",
-        "definitions.example",
-        "--output-dir",
-        output_dir,
-        "--format",
-        args.example_format,
-        "--no-manifest",
-        "--clean",
-    ]
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description="Generate Alloy configs from definitions.")
     parser.add_argument(
@@ -51,7 +35,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.examples:
-        sys.argv = [sys.argv[0], *build_example_args(args)]
+        sys.argv = [sys.argv[0], "--examples"]
         cli_main()
         return
 

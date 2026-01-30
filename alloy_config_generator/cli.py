@@ -507,6 +507,22 @@ def parse_args():
     parser.add_argument("--all", action="store_true", dest="generate_all", help="Generate configs for all hosts")
     parser.add_argument("--output-dir", default="generated", help="Output directory for generated artifacts")
     parser.add_argument(
+        "--examples",
+        action="store_true",
+        help="Generate example outputs from definitions.example into generated.example",
+    )
+    parser.add_argument(
+        "--example-output-dir",
+        default="generated.example",
+        help="Output directory for example generation (used with --examples)",
+    )
+    parser.add_argument(
+        "--example-format",
+        default="both",
+        choices=["alloy", "configmap", "both", "argocd", "all"],
+        help="Output format for example generation (used with --examples)",
+    )
+    parser.add_argument(
         "--definitions-dir",
         default=os.environ.get("ALLOYGEN_DEFINITIONS_DIR", "definitions"),
         help="Definitions directory (can also use ALLOYGEN_DEFINITIONS_DIR)",
@@ -597,7 +613,7 @@ def parse_args():
 
     if args.generate_all and args.host:
         error("Specify either a host name or --all, not both")
-    if not args.generate_all and not args.host:
+    if not args.examples and not args.generate_all and not args.host:
         parser.print_help()
         sys.exit(1)
 
@@ -607,6 +623,15 @@ def parse_args():
 def main():
     """Main entry point."""
     args = parse_args()
+
+    if args.examples:
+        args.generate_all = True
+        args.host = None
+        args.definitions_dir = "definitions.example"
+        args.output_dir = args.example_output_dir
+        args.format = args.example_format
+        args.no_manifest = True
+        args.clean = True
 
     # Load all definitions with stable ordering
     definitions_dir = Path(args.definitions_dir)

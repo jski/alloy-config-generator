@@ -46,7 +46,7 @@ python generate.py --all
 
 Generate example outputs (deterministic, committed to repo):
 ```bash
-python generate.py --examples
+alloygen --examples
 ```
 
 ## Structure
