@@ -33,4 +33,4 @@ examples-check:
 preflight: install-dev fmt fmt-check test version-check examples-check
 
 preflight-act: preflight
-	act -j test
+	act pull_request -j package

@@ -249,7 +249,7 @@ Ways to contribute (beyond scrapes):
 ## Releases (PyPI)
 
 1) Bump the version in `pyproject.toml` in your PR.
-2) Merge the PR — CI builds artifacts on `main`.
+2) Open a PR — CI runs lint/tests/example checks and packaging smoke tests before merge.
 3) The Release workflow promotes those artifacts, tags `vX.Y.Z`, publishes to PyPI, and creates a GitHub Release with auto‑generated notes.
 
 Release notes live in GitHub Releases; PyPI will show the README and link back to GitHub for per‑version details.
