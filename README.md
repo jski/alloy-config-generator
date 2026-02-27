@@ -221,6 +221,16 @@ uv pip install -e ".[dev]"
 uv run pytest -q
 ```
 
+Pre-submit (one command):
+```bash
+make preflight
+```
+
+Optional local CI parity with act:
+```bash
+make preflight-act
+```
+
 Ways to contribute (beyond scrapes):
 
 - **Templates**: alternate config templates or deployment styles.
