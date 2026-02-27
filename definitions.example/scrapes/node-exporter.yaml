@@ -2,8 +2,9 @@ name: node-exporter
 type: metrics
 description: System metrics from node_exporter
 
-endpoint: https://localhost:9100/metrics
+endpoint: localhost:9100
 scrape_interval: 15s
+metrics_path: /metrics
 
 labels:
   job: node-exporter

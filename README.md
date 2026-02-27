@@ -118,6 +118,9 @@ labels:
   job: node
 ```
 
+For `type: metrics`, `endpoint` / `targets[].address` must be `host:port` only.
+Do not include `http://`, `https://`, or `/metrics` in the address; use `metrics_path`.
+
 Host (`definitions/hosts/host-01.yaml`):
 ```yaml
 name: host-01

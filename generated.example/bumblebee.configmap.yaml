@@ -36,6 +36,9 @@ data:
       forward_to = [prometheus.relabel.alloy_self.receiver]
       scrape_interval = "30s"
 
+      metrics_path = "/metrics"
+
+
       clustering {
         enabled = false
       }
@@ -256,6 +259,9 @@ data:
       forward_to = [prometheus.relabel.k8s_node_exporter_prometheus.receiver]
       scrape_interval = "30s"
 
+      metrics_path = "/metrics"
+
+
       clustering {
         enabled = false
       }
@@ -308,6 +314,9 @@ data:
       ]
       forward_to = [prometheus.relabel.traefik_metrics_k8s.receiver]
       scrape_interval = "10s"
+
+      metrics_path = "/metrics"
+
 
       clustering {
         enabled = false
