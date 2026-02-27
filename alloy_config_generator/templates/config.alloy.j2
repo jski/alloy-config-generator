@@ -99,6 +99,9 @@ prometheus.scrape "{{ scrape.id }}" {
   ]
   forward_to = [prometheus.relabel.{{ scrape.id }}.receiver]
   scrape_interval = "{{ scrape.scrape_interval }}"
+{% if scrape.metrics_path %}
+  metrics_path = "{{ scrape.metrics_path }}"
+{% endif %}
 
   clustering {
     enabled = false

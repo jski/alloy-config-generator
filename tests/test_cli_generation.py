@@ -26,6 +26,27 @@ def run_cli(tmp_path, extra_args, no_manifest=True):
     return out_dir
 
 
+def run_cli_with_definitions(definitions_dir, output_dir, capture_output=False):
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(output_dir),
+        "--definitions-dir",
+        str(definitions_dir),
+        "--format",
+        "alloy",
+        "--no-manifest",
+    ]
+    return subprocess.run(
+        cmd,
+        capture_output=capture_output,
+        text=capture_output,
+    )
+
+
 def test_generates_alloy_and_configmap(tmp_path):
     out_dir = run_cli(tmp_path, ["--format", "both"])
 
@@ -483,3 +504,213 @@ def test_rejects_invalid_relabel_action(tmp_path):
     result = subprocess.run(cmd, capture_output=True, text=True)
     assert result.returncode != 0
     assert "invalid action" in result.stdout
+
+
+def test_rejects_metrics_endpoint_with_scheme_and_path(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: https://localhost:9100/metrics",
+                "labels:",
+                "  job: node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
+    assert result.returncode != 0
+    assert "must be host:port without scheme" in result.stdout
+    assert "metrics_path" in result.stdout
+
+
+def test_rejects_metrics_endpoint_with_path_only(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100/metrics",
+                "labels:",
+                "  job: node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
+    assert result.returncode != 0
+    assert "must not include path '/metrics'" in result.stdout
+    assert "set metrics_path to '/metrics'" in result.stdout
+
+
+def test_rejects_metrics_path_without_leading_slash(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100",
+                "metrics_path: metrics",
+                "labels:",
+                "  job: node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
+    assert result.returncode != 0
+    assert "metrics_path must start with '/'" in result.stdout
+
+
+def test_renders_metrics_path_for_single_endpoint_scrape(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100",
+                "metrics_path: /probe",
+                "labels:",
+                "  job: node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
+    assert result.returncode == 0
+
+    alloy_text = (tmp_path / "out" / "demo.alloy").read_text(encoding="utf-8")
+    assert 'metrics_path = "/probe"' in alloy_text

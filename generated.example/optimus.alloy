@@ -25,6 +25,9 @@ prometheus.scrape "alloy_self" {
   forward_to = [prometheus.relabel.alloy_self.receiver]
   scrape_interval = "30s"
 
+  metrics_path = "/metrics"
+
+
   clustering {
     enabled = false
   }
@@ -241,10 +244,13 @@ prometheus.relabel "systemd_journal" {
 
 prometheus.scrape "node_exporter" {
   targets = [
-    {"__address__" = "https://localhost:9100/metrics"},
+    {"__address__" = "localhost:9100"},
   ]
   forward_to = [prometheus.relabel.node_exporter.receiver]
   scrape_interval = "15s"
+
+  metrics_path = "/metrics"
+
 
   clustering {
     enabled = false
@@ -302,6 +308,9 @@ prometheus.scrape "pihole_metrics" {
   ]
   forward_to = [prometheus.relabel.pihole_metrics.receiver]
   scrape_interval = "10s"
+
+  metrics_path = "/metrics"
+
 
   clustering {
     enabled = false

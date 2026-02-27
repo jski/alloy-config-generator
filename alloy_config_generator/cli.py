@@ -162,6 +162,52 @@ def validate_relabel_rules(relabel_rules, context):
                 error(f"{context}[{idx}].{field} must be a string")
 
 
+def validate_metrics_path(metrics_path, context):
+    """Validate metrics_path for Prometheus scrapes."""
+    if not isinstance(metrics_path, str) or not metrics_path:
+        error(f"{context} must be a non-empty string")
+    if not metrics_path.startswith("/"):
+        error(f"{context} must start with '/'. Got '{metrics_path}'")
+    if "://" in metrics_path:
+        error(f"{context} must not include a URL scheme. Got '{metrics_path}'")
+    if "?" in metrics_path or "#" in metrics_path:
+        error(
+            f"{context} must not include query/fragment. Got '{metrics_path}'. "
+            "Use scrape params instead."
+        )
+
+
+def validate_metrics_address(address, context):
+    """Validate a Prometheus scrape address (host:port only)."""
+    if not isinstance(address, str) or not address.strip():
+        error(f"{context} must be a non-empty string")
+
+    cleaned = address.strip()
+
+    if "://" in cleaned:
+        error(
+            f"{context} must be host:port without scheme. Got '{cleaned}'. "
+            "Move URL paths to metrics_path."
+        )
+
+    first_slash = cleaned.find("/")
+    if first_slash >= 0:
+        host_port = cleaned[:first_slash]
+        metrics_path = cleaned[first_slash:]
+        error(
+            f"{context} must not include path '{metrics_path}'. "
+            f"Set endpoint/address to '{host_port}' and set metrics_path to '{metrics_path}'."
+        )
+
+    if "?" in cleaned or "#" in cleaned:
+        error(
+            f"{context} must not include query/fragment. Got '{cleaned}'. "
+            "Use scrape params instead."
+        )
+
+    return cleaned
+
+
 def load_yaml(filepath, resolve_env):
     """Load a YAML file and optionally resolve environment variables."""
     with open(filepath, "r", encoding="utf-8") as handle:
@@ -444,6 +490,13 @@ def validate_scrape(scrape, scrape_name, host_name):
     if scrape_type == "metrics-k8s-pods":
         scrape.setdefault("scrape_interval", "30s")
         scrape.setdefault("role", "pod")
+    if scrape_type in {"metrics", "metrics-k8s", "metrics-k8s-pods"}:
+        metrics_path = scrape.get("metrics_path")
+        if metrics_path is not None:
+            validate_metrics_path(
+                metrics_path,
+                f"Scrape '{scrape_name}' on host '{host_name}' metrics_path",
+            )
 
     if (
         scrape_type == "metrics"
@@ -479,11 +532,26 @@ def validate_scrape(scrape, scrape_name, host_name):
                 error(
                     f"Scrape '{scrape_name}' target[{target_index}] must be a key/value map"
                 )
+            if scrape_type == "metrics":
+                target_context = (
+                    f"Scrape '{scrape_name}' on host '{host_name}' "
+                    f"target[{target_index}].address"
+                )
+                target["address"] = validate_metrics_address(
+                    target.get("address"),
+                    target_context,
+                )
             if target.get("labels") is not None:
                 validate_labels_map(
                     target["labels"],
                     f"Scrape '{scrape_name}' target[{target_index}] labels",
                 )
+
+    if scrape_type == "metrics" and scrape.get("endpoint"):
+        scrape["endpoint"] = validate_metrics_address(
+            scrape["endpoint"],
+            f"Scrape '{scrape_name}' on host '{host_name}' endpoint",
+        )
 
 
 def resolve_scrapes_for_host(host, scrapes, stacks, host_name):
@@ -580,7 +648,6 @@ def generate_config(
     host = copy.deepcopy(hosts[host_name])
     host.setdefault("extra_labels", {})
     validate_labels_map(host["extra_labels"], f"Host '{host_name}' extra_labels")
-    host_namespace = host.get("namespace")
 
     host_scrapes = resolve_scrapes_for_host(host, scrapes, stacks, host_name)
     required_signals = compute_required_signals(host_scrapes)
