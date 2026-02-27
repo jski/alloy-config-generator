@@ -10,7 +10,9 @@ from alloy_config_generator.cli import main as cli_main
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate Alloy configs from definitions.")
+    parser = argparse.ArgumentParser(
+        description="Generate Alloy configs from definitions."
+    )
     parser.add_argument(
         "--examples",
         action="store_true",

@@ -182,10 +182,10 @@ data:
       }
     }
 
-    prometheus.relabel "systemd-journal" {
+    prometheus.relabel "systemd_journal" {
       forward_to = [
-        prometheus.remote_write.optimus-grafana.receiver,
-        prometheus.remote_write.bumblebee-grafana.receiver,
+        prometheus.remote_write.optimus_grafana.receiver,
+        prometheus.remote_write.bumblebee_grafana.receiver,
       ]
 
 

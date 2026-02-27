@@ -25,6 +25,28 @@ from jinja2 import Template
 
 ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 IDENTIFIER_PATTERN = re.compile(r"[^a-zA-Z0-9_]")
+LABEL_NAME_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+RELABEL_ACTIONS = {
+    "drop",
+    "dropequal",
+    "hashmod",
+    "keep",
+    "keepequal",
+    "labeldrop",
+    "labelkeep",
+    "labelmap",
+    "lowercase",
+    "replace",
+    "uppercase",
+}
+RELABEL_ACTIONS_REQUIRE_TARGET_LABEL = {
+    "dropequal",
+    "hashmod",
+    "keepequal",
+    "lowercase",
+    "replace",
+    "uppercase",
+}
 
 
 def warn(message):
@@ -57,7 +79,9 @@ def resolve_env_vars(value, resolve_env):
 def resolve_all_env_vars(data, resolve_env):
     """Recursively resolve environment variables in YAML data."""
     if isinstance(data, dict):
-        return {key: resolve_all_env_vars(value, resolve_env) for key, value in data.items()}
+        return {
+            key: resolve_all_env_vars(value, resolve_env) for key, value in data.items()
+        }
     if isinstance(data, list):
         return [resolve_all_env_vars(item, resolve_env) for item in data]
     if isinstance(data, str):
@@ -76,6 +100,66 @@ def to_identifier(value):
     if cleaned[0].isdigit():
         cleaned = f"n_{cleaned}"
     return cleaned
+
+
+def validate_label_name(name, context):
+    """Validate a label name for Prometheus/Loki compatibility."""
+    if not isinstance(name, str) or not name:
+        error(f"{context} has an empty or non-string label name")
+    if not LABEL_NAME_PATTERN.match(name):
+        error(f"{context} has invalid label name '{name}'. Use [a-zA-Z_][a-zA-Z0-9_]*.")
+
+
+def validate_labels_map(labels, context):
+    """Validate a map of labels."""
+    if not isinstance(labels, dict):
+        error(f"{context} must be a key/value map")
+    for key in labels:
+        validate_label_name(key, context)
+
+
+def validate_relabel_rules(relabel_rules, context):
+    """Validate relabel rules to fail early on invalid rule configs."""
+    if not isinstance(relabel_rules, list):
+        error(f"{context} must be a list")
+
+    for idx, rule in enumerate(relabel_rules, start=1):
+        if not isinstance(rule, dict):
+            error(f"{context}[{idx}] must be a map")
+
+        action = rule.get("action", "replace")
+        if action not in RELABEL_ACTIONS:
+            allowed = ", ".join(sorted(RELABEL_ACTIONS))
+            error(f"{context}[{idx}] has invalid action '{action}'. Allowed: {allowed}")
+
+        source_labels = rule.get("source_labels")
+        if source_labels is not None:
+            if not isinstance(source_labels, list):
+                error(f"{context}[{idx}].source_labels must be a list of strings")
+            for label_idx, source_label in enumerate(source_labels, start=1):
+                if not isinstance(source_label, str) or not source_label:
+                    error(
+                        f"{context}[{idx}].source_labels[{label_idx}] "
+                        "must be a non-empty string"
+                    )
+
+        target_label = rule.get("target_label")
+        if action in RELABEL_ACTIONS_REQUIRE_TARGET_LABEL and not target_label:
+            error(f"{context}[{idx}] action '{action}' requires target_label")
+        if target_label is not None:
+            validate_label_name(target_label, f"{context}[{idx}].target_label")
+
+        if action == "hashmod":
+            modulus = rule.get("modulus")
+            if modulus is None:
+                error(f"{context}[{idx}] action 'hashmod' requires modulus")
+            if not isinstance(modulus, int) or modulus <= 0:
+                error(f"{context}[{idx}].modulus must be a positive integer")
+
+        for field in ("regex", "replacement", "separator"):
+            value = rule.get(field)
+            if value is not None and not isinstance(value, str):
+                error(f"{context}[{idx}].{field} must be a string")
 
 
 def load_yaml(filepath, resolve_env):
@@ -243,7 +327,9 @@ def collect_input_hashes(definitions_root):
 
     templates_dir = root / "templates"
     if templates_dir.exists():
-        template_paths = sorted(templates_dir.glob("*.j2"), key=lambda p: p.as_posix().lower())
+        template_paths = sorted(
+            templates_dir.glob("*.j2"), key=lambda p: p.as_posix().lower()
+        )
         for path in template_paths:
             rel_path = path.relative_to(root).as_posix()
             inputs[rel_path] = hash_file(path)
@@ -287,11 +373,15 @@ def resolve_endpoints_for_host(host, endpoints, required_signals, host_name):
             if isinstance(endpoint_names, str):
                 endpoint_names = [endpoint_names]
             if signal_type not in endpoints_to_use:
-                warn(f"Host '{host_name}' references unsupported endpoint type '{signal_type}'")
+                warn(
+                    f"Host '{host_name}' references unsupported endpoint type '{signal_type}'"
+                )
                 continue
             for endpoint_name in endpoint_names:
                 if endpoint_name not in endpoints:
-                    error(f"Endpoint '{endpoint_name}' not found for host '{host_name}'")
+                    error(
+                        f"Endpoint '{endpoint_name}' not found for host '{host_name}'"
+                    )
                 endpoint = endpoints[endpoint_name]
                 if endpoint_enabled(endpoint, signal_type):
                     endpoints_to_use[signal_type].append(endpoint)
@@ -329,13 +419,25 @@ def resolve_endpoints_for_host(host, endpoints, required_signals, host_name):
 def validate_scrape(scrape, scrape_name, host_name):
     """Validate and apply safe defaults to a scrape definition."""
     scrape_type = scrape.get("type")
-    if scrape_type not in {"logs", "logs-journal", "logs-k8s", "metrics", "metrics-k8s", "metrics-k8s-pods"}:
-        error(f"Scrape '{scrape_name}' on host '{host_name}' has unsupported type '{scrape_type}'")
+    if scrape_type not in {
+        "logs",
+        "logs-journal",
+        "logs-k8s",
+        "metrics",
+        "metrics-k8s",
+        "metrics-k8s-pods",
+    }:
+        error(
+            f"Scrape '{scrape_name}' on host '{host_name}' has unsupported type '{scrape_type}'"
+        )
 
     scrape.setdefault("labels", {})
+    validate_labels_map(scrape["labels"], f"Scrape '{scrape_name}' labels")
     if "job" not in scrape["labels"]:
         scrape["labels"]["job"] = scrape_name
-        warn(f"Scrape '{scrape_name}' on host '{host_name}' missing labels.job; defaulting to '{scrape_name}'")
+        warn(
+            f"Scrape '{scrape_name}' on host '{host_name}' missing labels.job; defaulting to '{scrape_name}'"
+        )
 
     if scrape_type in {"metrics", "metrics-k8s"}:
         scrape.setdefault("scrape_interval", "30s")
@@ -343,11 +445,19 @@ def validate_scrape(scrape, scrape_name, host_name):
         scrape.setdefault("scrape_interval", "30s")
         scrape.setdefault("role", "pod")
 
-    if scrape_type == "metrics" and not scrape.get("targets") and not scrape.get("endpoint"):
-        error(f"Scrape '{scrape_name}' on host '{host_name}' must define 'endpoint' or 'targets'")
+    if (
+        scrape_type == "metrics"
+        and not scrape.get("targets")
+        and not scrape.get("endpoint")
+    ):
+        error(
+            f"Scrape '{scrape_name}' on host '{host_name}' must define 'endpoint' or 'targets'"
+        )
 
     if scrape_type == "logs" and not scrape.get("targets") and not scrape.get("paths"):
-        error(f"Scrape '{scrape_name}' on host '{host_name}' must define 'paths' or 'targets'")
+        error(
+            f"Scrape '{scrape_name}' on host '{host_name}' must define 'paths' or 'targets'"
+        )
 
     if scrape_type == "logs-journal":
         scrape.setdefault("path", "/var/log/journal")
@@ -356,6 +466,24 @@ def validate_scrape(scrape, scrape_name, host_name):
 
     if scrape_type == "logs-k8s":
         scrape.setdefault("role", "pod")
+
+    if scrape.get("relabel_rules") is not None:
+        validate_relabel_rules(
+            scrape["relabel_rules"],
+            f"Scrape '{scrape_name}' relabel_rules",
+        )
+
+    if scrape.get("targets"):
+        for target_index, target in enumerate(scrape["targets"], start=1):
+            if not isinstance(target, dict):
+                error(
+                    f"Scrape '{scrape_name}' target[{target_index}] must be a key/value map"
+                )
+            if target.get("labels") is not None:
+                validate_labels_map(
+                    target["labels"],
+                    f"Scrape '{scrape_name}' target[{target_index}] labels",
+                )
 
 
 def resolve_scrapes_for_host(host, scrapes, stacks, host_name):
@@ -373,16 +501,41 @@ def resolve_scrapes_for_host(host, scrapes, stacks, host_name):
         error(f"Host '{host_name}' has no scrapes configured")
 
     resolved_scrapes = []
+    seen_scrape_ids = {}
+    seen_metrics_target_ids = {}
+    seen_logs_target_ids = {}
+
     for scrape_name in host_scrape_names:
         if scrape_name not in scrapes:
             error(f"Scrape '{scrape_name}' not found for host '{host_name}'")
         scrape = copy.deepcopy(scrapes[scrape_name])
         validate_scrape(scrape, scrape_name, host_name)
         scrape["id"] = to_identifier(scrape.get("name", scrape_name))
+        if scrape["id"] in seen_scrape_ids:
+            previous = seen_scrape_ids[scrape["id"]]
+            error(
+                f"Scrapes '{previous}' and '{scrape_name}' on host '{host_name}' "
+                f"normalize to the same identifier '{scrape['id']}'"
+            )
+        seen_scrape_ids[scrape["id"]] = scrape_name
+
         if scrape.get("targets"):
+            if scrape["type"] == "metrics":
+                seen_target_ids = seen_metrics_target_ids
+            elif scrape["type"] == "logs":
+                seen_target_ids = seen_logs_target_ids
+            else:
+                seen_target_ids = {}
             for target in scrape["targets"]:
                 target_name = target.get("name") or target.get("address") or "target"
                 target["id"] = to_identifier(target_name)
+                if target["id"] in seen_target_ids:
+                    previous = seen_target_ids[target["id"]]
+                    error(
+                        f"Targets '{previous}' and '{target_name}' on host '{host_name}' "
+                        f"normalize to the same identifier '{target['id']}' for scrape type '{scrape['type']}'"
+                    )
+                seen_target_ids[target["id"]] = target_name
         resolved_scrapes.append(scrape)
 
     return resolved_scrapes
@@ -416,7 +569,9 @@ def render_configmap(host_name, config_text, name_template, namespace, config_ke
     return "\n".join(lines) + "\n"
 
 
-def generate_config(host_name, hosts, endpoints, scrapes, stacks, template, include_timestamp):
+def generate_config(
+    host_name, hosts, endpoints, scrapes, stacks, template, include_timestamp
+):
     """Generate Alloy config for a specific host."""
     if host_name not in hosts:
         available = ", ".join(sorted(hosts.keys()))
@@ -424,14 +579,25 @@ def generate_config(host_name, hosts, endpoints, scrapes, stacks, template, incl
 
     host = copy.deepcopy(hosts[host_name])
     host.setdefault("extra_labels", {})
+    validate_labels_map(host["extra_labels"], f"Host '{host_name}' extra_labels")
     host_namespace = host.get("namespace")
 
     host_scrapes = resolve_scrapes_for_host(host, scrapes, stacks, host_name)
     required_signals = compute_required_signals(host_scrapes)
-    endpoints_to_use = resolve_endpoints_for_host(host, endpoints, required_signals, host_name)
+    endpoints_to_use = resolve_endpoints_for_host(
+        host, endpoints, required_signals, host_name
+    )
     for endpoint_list in endpoints_to_use.values():
+        seen_endpoint_ids = {}
         for endpoint in endpoint_list:
             endpoint["id"] = to_identifier(endpoint.get("name"))
+            if endpoint["id"] in seen_endpoint_ids:
+                previous = seen_endpoint_ids[endpoint["id"]]
+                error(
+                    f"Endpoints '{previous}' and '{endpoint.get('name')}' "
+                    f"on host '{host_name}' normalize to the same identifier '{endpoint['id']}'"
+                )
+            seen_endpoint_ids[endpoint["id"]] = endpoint.get("name")
 
     timestamp = None
     if include_timestamp:
@@ -469,7 +635,9 @@ def write_manifests(output_dir, outputs, manifest_enabled, settings, definitions
     }
 
     manifest_json_path = output_dir / "manifest.json"
-    write_text(manifest_json_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    write_text(
+        manifest_json_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    )
 
     sha_entries = []
     for host_outputs in outputs.values():
@@ -504,8 +672,17 @@ def parse_args():
         help="Show version and exit",
     )
     parser.add_argument("host", nargs="?", help="Host name to generate")
-    parser.add_argument("--all", action="store_true", dest="generate_all", help="Generate configs for all hosts")
-    parser.add_argument("--output-dir", default="generated", help="Output directory for generated artifacts")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="generate_all",
+        help="Generate configs for all hosts",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="generated",
+        help="Output directory for generated artifacts",
+    )
     parser.add_argument(
         "--examples",
         action="store_true",
@@ -538,8 +715,16 @@ def parse_args():
         default="alloy-config-{host}",
         help="ConfigMap name template (supports {host})",
     )
-    parser.add_argument("--configmap-key", default="config.alloy", help="Key name for the config in the ConfigMap")
-    parser.add_argument("--namespace", default=None, help="Kubernetes namespace for generated ConfigMaps")
+    parser.add_argument(
+        "--configmap-key",
+        default="config.alloy",
+        help="Key name for the config in the ConfigMap",
+    )
+    parser.add_argument(
+        "--namespace",
+        default=None,
+        help="Kubernetes namespace for generated ConfigMaps",
+    )
     parser.add_argument(
         "--resolve-env",
         action="store_true",
@@ -550,7 +735,9 @@ def parse_args():
         action="store_true",
         help="Include a generation timestamp in configs (reduces determinism)",
     )
-    parser.add_argument("--no-manifest", action="store_true", help="Do not generate manifest files")
+    parser.add_argument(
+        "--no-manifest", action="store_true", help="Do not generate manifest files"
+    )
     parser.add_argument(
         "--include-disabled",
         action="store_true",
@@ -665,24 +852,28 @@ def main():
     root = Path.cwd().resolve()
     if not args.include_disabled:
         hosts = {
-            name: data
-            for name, data in hosts.items()
-            if data.get("enabled", True)
+            name: data for name, data in hosts.items() if data.get("enabled", True)
         }
     if not hosts:
-        error("No enabled hosts found. Use --include-disabled to generate disabled hosts.")
+        error(
+            "No enabled hosts found. Use --include-disabled to generate disabled hosts."
+        )
 
     host_names = sorted(hosts.keys()) if args.generate_all else [args.host]
 
     if generate_argocd and args.k8s_output_dir is None:
         k8s_output_dir = output_dir / "k8s"
     else:
-        k8s_output_dir = Path(args.k8s_output_dir) if args.k8s_output_dir else output_dir
+        k8s_output_dir = (
+            Path(args.k8s_output_dir) if args.k8s_output_dir else output_dir
+        )
 
     if generate_argocd and args.alloy_output_dir is None:
         alloy_output_dir = output_dir / "alloy"
     else:
-        alloy_output_dir = Path(args.alloy_output_dir) if args.alloy_output_dir else output_dir
+        alloy_output_dir = (
+            Path(args.alloy_output_dir) if args.alloy_output_dir else output_dir
+        )
 
     if generate_alloy:
         alloy_output_dir.mkdir(parents=True, exist_ok=True)
@@ -694,9 +885,13 @@ def main():
     outputs = {}
     if args.clean:
         if generate_alloy:
-            clean_outputs(alloy_output_dir, host_names, clean_alloy=True, clean_configmap=False)
+            clean_outputs(
+                alloy_output_dir, host_names, clean_alloy=True, clean_configmap=False
+            )
         if generate_configmap and not k8s_per_host:
-            clean_outputs(k8s_output_dir, host_names, clean_alloy=False, clean_configmap=True)
+            clean_outputs(
+                k8s_output_dir, host_names, clean_alloy=False, clean_configmap=True
+            )
         if k8s_per_host:
             clean_k8s_host_dirs(k8s_output_dir, host_names)
     for host_name in host_names:
@@ -715,11 +910,16 @@ def main():
         if k8s_per_host:
             k8s_host_dir.mkdir(parents=True, exist_ok=True)
         if generate_alloy:
-            output_filename = hosts[host_name].get("output_filename", f"{host_name}.alloy")
+            output_filename = hosts[host_name].get(
+                "output_filename", f"{host_name}.alloy"
+            )
             alloy_path = alloy_output_dir / output_filename
             write_text(alloy_path, config)
             rel_alloy_path = relativize(alloy_path, root)
-            host_outputs["alloy"] = {"path": rel_alloy_path, "sha256": hash_text(config)}
+            host_outputs["alloy"] = {
+                "path": rel_alloy_path,
+                "sha256": hash_text(config),
+            }
             print(f"Generated: {rel_alloy_path}")
 
         if generate_configmap:
@@ -740,7 +940,10 @@ def main():
             configmap_path = k8s_host_dir / f"{host_name}.configmap.yaml"
             write_text(configmap_path, configmap_text)
             rel_configmap_path = relativize(configmap_path, root)
-            host_outputs["configmap"] = {"path": rel_configmap_path, "sha256": hash_text(configmap_text)}
+            host_outputs["configmap"] = {
+                "path": rel_configmap_path,
+                "sha256": hash_text(configmap_text),
+            }
             print(f"Generated: {rel_configmap_path}")
 
         if generate_argocd:
@@ -763,7 +966,10 @@ def main():
             argocd_path = k8s_host_dir / f"{host_name}.argocd-app.yaml"
             write_text(argocd_path, argocd_text)
             rel_argocd_path = relativize(argocd_path, root)
-            host_outputs["argocd_app"] = {"path": rel_argocd_path, "sha256": hash_text(argocd_text)}
+            host_outputs["argocd_app"] = {
+                "path": rel_argocd_path,
+                "sha256": hash_text(argocd_text),
+            }
             print(f"Generated: {rel_argocd_path}")
 
         outputs[host_name] = host_outputs

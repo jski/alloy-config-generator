@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+if [ "${SKIP_VERSION_CHECK:-}" = "1" ]; then
+  echo "Skipping version check (SKIP_VERSION_CHECK=1)."
+  exit 0
+fi
+
+uv run python scripts/check_version_bump.py --base-ref origin/main
