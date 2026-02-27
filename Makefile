@@ -1,13 +1,18 @@
-.PHONY: help install-dev hooks-install fmt fmt-check test generate version-check examples-check alloy-validate preflight preflight-act
+.PHONY: help install-dev hooks-install fmt fmt-check lint test generate package-check version-check examples-check alloy-validate workflow-check act-ci preflight preflight-act verify
 
 help:
 	@echo "Targets:"
 	@echo "  make preflight      - Install dev deps, format, verify format, run tests, validate generated.example"
-	@echo "  make preflight-act  - Run preflight, then run local GitHub Actions job with act"
+	@echo "  make preflight-act  - Alias for make verify"
+	@echo "  make verify         - Comprehensive local gate (lint, tests, package, workflows, act CI jobs)"
 	@echo "  make hooks-install  - Configure git hooks to run local pre-push checks"
 	@echo "  make fmt            - Apply ruff formatting"
+	@echo "  make lint           - Run ruff lint checks"
 	@echo "  make test           - Run pytest"
 	@echo "  make generate       - Regenerate repo examples into generated.example/"
+	@echo "  make package-check  - Build and smoke-test installed wheel"
+	@echo "  make workflow-check - Lint GitHub Actions workflows with actionlint"
+	@echo "  make act-ci         - Run CI jobs locally with act"
 	@echo "  make alloy-validate - Parse-check generated Alloy configs with alloy fmt"
 
 install-dev:
@@ -22,11 +27,18 @@ fmt:
 fmt-check:
 	uv run ruff format --check .
 
+lint:
+	uv run ruff check .
+
 test:
 	uv run pytest -q
 
 generate:
 	uv run alloygen --examples
+
+package-check:
+	uv build
+	python scripts/package_check.py
 
 version-check:
 	uv run python scripts/check_version_bump.py --base-ref origin/main
@@ -38,7 +50,17 @@ examples-check:
 alloy-validate:
 	uv run python scripts/check_alloy_configs.py generated.example
 
-preflight: install-dev fmt fmt-check test version-check examples-check alloy-validate
+workflow-check:
+	python scripts/require_tools.py actionlint
+	actionlint -color
 
-preflight-act: preflight
-	act pull_request -j package
+act-ci:
+	python scripts/require_tools.py act
+	act pull_request -W .github/workflows/ci.yml -j lint-test-examples
+	act pull_request -W .github/workflows/ci.yml -j package
+
+preflight: install-dev fmt fmt-check lint test version-check examples-check alloy-validate
+
+verify: install-dev fmt-check lint test version-check examples-check alloy-validate package-check workflow-check act-ci
+
+preflight-act: verify

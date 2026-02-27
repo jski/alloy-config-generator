@@ -15,18 +15,27 @@ jobs:
         python-version: ["3.9", "3.11", "3.12"]
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7.3.1
 
       - name: Install Alloy
-        uses: grafana/install-alloy@v0.0.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gpg wget
+          sudo mkdir -p /etc/apt/keyrings
+          sudo wget -q -O /etc/apt/keyrings/grafana.asc https://apt.grafana.com/gpg-full.key
+          sudo chmod 644 /etc/apt/keyrings/grafana.asc
+          echo "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list
+          sudo apt-get update
+          sudo apt-get install -y alloy
+          alloy --version
 
       - name: Install dependencies
         run: |
@@ -54,15 +63,15 @@ jobs:
     needs: lint-test-examples
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.11"
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7.3.1
 
       - name: Build artifacts
         run: uv build
@@ -79,7 +88,7 @@ jobs:
 
       - name: Upload artifacts
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.0
         with:
           name: dist
           path: dist/*
@@ -89,7 +98,7 @@ jobs:
     if: github.event_name == 'pull_request'
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
 

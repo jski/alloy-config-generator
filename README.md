@@ -218,6 +218,20 @@ I’m happy to accept new scrape targets and improvements. To keep the project s
 - **Prefer backward‑compatible changes**: avoid breaking existing field names or defaults; if you must, document it clearly.
 - **Document the scrape**: add a short note in README (or a comment in the example YAML) explaining what it does and when to use it.
 
+### Build/Test Prerequisites
+
+Required for local build/test (`make preflight`):
+- Python 3.9+ (3.11+ recommended)
+- `uv` (package/env manager)
+- `make`
+- `git`
+- `alloy` in `PATH` (used by Alloy config validation)
+
+Additional required tools for full local CI parity (`make verify`):
+- `actionlint` (workflow linting)
+- `act` (run GitHub Actions locally)
+- Docker running locally (required by `act`)
+
 Run tests locally:
 ```bash
 uv pip install -e ".[dev]"
@@ -227,6 +241,11 @@ uv run pytest -q
 Pre-submit (one command):
 ```bash
 make preflight
+```
+
+Comprehensive local gate (recommended before opening a PR):
+```bash
+make verify
 ```
 
 Install local git hooks (recommended, runs version-bump guard on push):

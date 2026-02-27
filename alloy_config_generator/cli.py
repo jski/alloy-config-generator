@@ -648,7 +648,6 @@ def generate_config(
     host = copy.deepcopy(hosts[host_name])
     host.setdefault("extra_labels", {})
     validate_labels_map(host["extra_labels"], f"Host '{host_name}' extra_labels")
-    host_namespace = host.get("namespace")
 
     host_scrapes = resolve_scrapes_for_host(host, scrapes, stacks, host_name)
     required_signals = compute_required_signals(host_scrapes)
