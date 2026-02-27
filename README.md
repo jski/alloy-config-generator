@@ -226,6 +226,11 @@ Pre-submit (one command):
 make preflight
 ```
 
+Install local git hooks (recommended, runs version-bump guard on push):
+```bash
+make hooks-install
+```
+
 Optional local CI parity with act:
 ```bash
 make preflight-act
