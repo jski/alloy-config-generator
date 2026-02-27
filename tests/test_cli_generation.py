@@ -204,3 +204,282 @@ def test_logs_journal_uses_identifier_safe_component_names(tmp_path):
     assert 'replacement  = "systemd-journal"' in alloy_text
     assert 'prometheus.relabel "systemd-journal"' not in alloy_text
     assert "prometheus.remote_write.shockwave-grafana.receiver" not in alloy_text
+
+
+def test_rejects_invalid_label_names(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "extra_labels:",
+                "  env-name: prod",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100",
+                "labels:",
+                "  job: node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--definitions-dir",
+        str(defs),
+        "--format",
+        "alloy",
+        "--no-manifest",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "invalid label name" in result.stdout
+
+
+def test_rejects_identifier_collisions_after_normalization(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoints:",
+                "  prometheus: [shockwave-grafana, shockwave_grafana]",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100",
+                "labels:",
+                "  job: node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "shockwave-grafana.yaml").write_text(
+        "\n".join(
+            [
+                "name: shockwave-grafana",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom-a.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "shockwave_grafana.yaml").write_text(
+        "\n".join(
+            [
+                "name: shockwave_grafana",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom-b.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--definitions-dir",
+        str(defs),
+        "--format",
+        "alloy",
+        "--no-manifest",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "normalize to the same identifier" in result.stdout
+
+
+def test_hashmod_relabel_rule_renders_modulus(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100",
+                "labels:",
+                "  job: node",
+                "relabel_rules:",
+                "  - action: hashmod",
+                "    source_labels: [instance]",
+                "    target_label: shard",
+                "    modulus: 16",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--definitions-dir",
+        str(defs),
+        "--format",
+        "alloy",
+        "--no-manifest",
+    ]
+    subprocess.run(cmd, check=True)
+    alloy_text = (tmp_path / "out" / "demo.alloy").read_text(encoding="utf-8")
+    assert 'action = "hashmod"' in alloy_text
+    assert "modulus = 16" in alloy_text
+
+
+def test_rejects_invalid_relabel_action(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100",
+                "labels:",
+                "  job: node",
+                "relabel_rules:",
+                "  - action: not-a-real-action",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(tmp_path / "out"),
+        "--definitions-dir",
+        str(defs),
+        "--format",
+        "alloy",
+        "--no-manifest",
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "invalid action" in result.stdout

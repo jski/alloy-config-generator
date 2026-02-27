@@ -130,6 +130,9 @@ prometheus.relabel "{{ scrape.id }}" {
 {%- if rule.replacement %}
     replacement = "{{ rule.replacement }}"
 {%- endif %}
+{%- if rule.modulus is defined %}
+    modulus = {{ rule.modulus }}
+{%- endif %}
   }
 {%- endfor %}
 
@@ -190,6 +193,9 @@ prometheus.relabel "{{ scrape.id }}" {
 {%- if rule.replacement %}
     replacement = "{{ rule.replacement }}"
 {%- endif %}
+{%- if rule.modulus is defined %}
+    modulus = {{ rule.modulus }}
+{%- endif %}
   }
 {%- endfor %}
 
@@ -227,6 +233,9 @@ discovery.relabel "{{ scrape.id }}" {
 {%- endif %}
 {%- if rule.replacement %}
     replacement = "{{ rule.replacement }}"
+{%- endif %}
+{%- if rule.modulus is defined %}
+    modulus = {{ rule.modulus }}
 {%- endif %}
   }
 {%- endfor %}
@@ -284,6 +293,9 @@ prometheus.relabel "{{ scrape.id }}" {
 {%- endif %}
 {%- if rule.replacement %}
     replacement = "{{ rule.replacement }}"
+{%- endif %}
+{%- if rule.modulus is defined %}
+    modulus = {{ rule.modulus }}
 {%- endif %}
   }
 {%- endfor %}
@@ -373,6 +385,9 @@ prometheus.relabel "{{ scrape.id }}" {
 {%- endif %}
 {%- if rule.replacement %}
     replacement = "{{ rule.replacement }}"
+{%- endif %}
+{%- if rule.modulus is defined %}
+    modulus = {{ rule.modulus }}
 {%- endif %}
   }
 {%- endfor %}

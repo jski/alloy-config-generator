@@ -25,6 +25,28 @@ from jinja2 import Template
 
 ENV_VAR_PATTERN = re.compile(r"\$\{([^}]+)\}")
 IDENTIFIER_PATTERN = re.compile(r"[^a-zA-Z0-9_]")
+LABEL_NAME_PATTERN = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
+RELABEL_ACTIONS = {
+    "drop",
+    "dropequal",
+    "hashmod",
+    "keep",
+    "keepequal",
+    "labeldrop",
+    "labelkeep",
+    "labelmap",
+    "lowercase",
+    "replace",
+    "uppercase",
+}
+RELABEL_ACTIONS_REQUIRE_TARGET_LABEL = {
+    "dropequal",
+    "hashmod",
+    "keepequal",
+    "lowercase",
+    "replace",
+    "uppercase",
+}
 
 
 def warn(message):
@@ -78,6 +100,66 @@ def to_identifier(value):
     if cleaned[0].isdigit():
         cleaned = f"n_{cleaned}"
     return cleaned
+
+
+def validate_label_name(name, context):
+    """Validate a label name for Prometheus/Loki compatibility."""
+    if not isinstance(name, str) or not name:
+        error(f"{context} has an empty or non-string label name")
+    if not LABEL_NAME_PATTERN.match(name):
+        error(f"{context} has invalid label name '{name}'. Use [a-zA-Z_][a-zA-Z0-9_]*.")
+
+
+def validate_labels_map(labels, context):
+    """Validate a map of labels."""
+    if not isinstance(labels, dict):
+        error(f"{context} must be a key/value map")
+    for key in labels:
+        validate_label_name(key, context)
+
+
+def validate_relabel_rules(relabel_rules, context):
+    """Validate relabel rules to fail early on invalid rule configs."""
+    if not isinstance(relabel_rules, list):
+        error(f"{context} must be a list")
+
+    for idx, rule in enumerate(relabel_rules, start=1):
+        if not isinstance(rule, dict):
+            error(f"{context}[{idx}] must be a map")
+
+        action = rule.get("action", "replace")
+        if action not in RELABEL_ACTIONS:
+            allowed = ", ".join(sorted(RELABEL_ACTIONS))
+            error(f"{context}[{idx}] has invalid action '{action}'. Allowed: {allowed}")
+
+        source_labels = rule.get("source_labels")
+        if source_labels is not None:
+            if not isinstance(source_labels, list):
+                error(f"{context}[{idx}].source_labels must be a list of strings")
+            for label_idx, source_label in enumerate(source_labels, start=1):
+                if not isinstance(source_label, str) or not source_label:
+                    error(
+                        f"{context}[{idx}].source_labels[{label_idx}] "
+                        "must be a non-empty string"
+                    )
+
+        target_label = rule.get("target_label")
+        if action in RELABEL_ACTIONS_REQUIRE_TARGET_LABEL and not target_label:
+            error(f"{context}[{idx}] action '{action}' requires target_label")
+        if target_label is not None:
+            validate_label_name(target_label, f"{context}[{idx}].target_label")
+
+        if action == "hashmod":
+            modulus = rule.get("modulus")
+            if modulus is None:
+                error(f"{context}[{idx}] action 'hashmod' requires modulus")
+            if not isinstance(modulus, int) or modulus <= 0:
+                error(f"{context}[{idx}].modulus must be a positive integer")
+
+        for field in ("regex", "replacement", "separator"):
+            value = rule.get(field)
+            if value is not None and not isinstance(value, str):
+                error(f"{context}[{idx}].{field} must be a string")
 
 
 def load_yaml(filepath, resolve_env):
@@ -350,6 +432,7 @@ def validate_scrape(scrape, scrape_name, host_name):
         )
 
     scrape.setdefault("labels", {})
+    validate_labels_map(scrape["labels"], f"Scrape '{scrape_name}' labels")
     if "job" not in scrape["labels"]:
         scrape["labels"]["job"] = scrape_name
         warn(
@@ -384,6 +467,24 @@ def validate_scrape(scrape, scrape_name, host_name):
     if scrape_type == "logs-k8s":
         scrape.setdefault("role", "pod")
 
+    if scrape.get("relabel_rules") is not None:
+        validate_relabel_rules(
+            scrape["relabel_rules"],
+            f"Scrape '{scrape_name}' relabel_rules",
+        )
+
+    if scrape.get("targets"):
+        for target_index, target in enumerate(scrape["targets"], start=1):
+            if not isinstance(target, dict):
+                error(
+                    f"Scrape '{scrape_name}' target[{target_index}] must be a key/value map"
+                )
+            if target.get("labels") is not None:
+                validate_labels_map(
+                    target["labels"],
+                    f"Scrape '{scrape_name}' target[{target_index}] labels",
+                )
+
 
 def resolve_scrapes_for_host(host, scrapes, stacks, host_name):
     """Resolve scrapes for a host, including stack expansion and validation."""
@@ -400,16 +501,41 @@ def resolve_scrapes_for_host(host, scrapes, stacks, host_name):
         error(f"Host '{host_name}' has no scrapes configured")
 
     resolved_scrapes = []
+    seen_scrape_ids = {}
+    seen_metrics_target_ids = {}
+    seen_logs_target_ids = {}
+
     for scrape_name in host_scrape_names:
         if scrape_name not in scrapes:
             error(f"Scrape '{scrape_name}' not found for host '{host_name}'")
         scrape = copy.deepcopy(scrapes[scrape_name])
         validate_scrape(scrape, scrape_name, host_name)
         scrape["id"] = to_identifier(scrape.get("name", scrape_name))
+        if scrape["id"] in seen_scrape_ids:
+            previous = seen_scrape_ids[scrape["id"]]
+            error(
+                f"Scrapes '{previous}' and '{scrape_name}' on host '{host_name}' "
+                f"normalize to the same identifier '{scrape['id']}'"
+            )
+        seen_scrape_ids[scrape["id"]] = scrape_name
+
         if scrape.get("targets"):
+            if scrape["type"] == "metrics":
+                seen_target_ids = seen_metrics_target_ids
+            elif scrape["type"] == "logs":
+                seen_target_ids = seen_logs_target_ids
+            else:
+                seen_target_ids = {}
             for target in scrape["targets"]:
                 target_name = target.get("name") or target.get("address") or "target"
                 target["id"] = to_identifier(target_name)
+                if target["id"] in seen_target_ids:
+                    previous = seen_target_ids[target["id"]]
+                    error(
+                        f"Targets '{previous}' and '{target_name}' on host '{host_name}' "
+                        f"normalize to the same identifier '{target['id']}' for scrape type '{scrape['type']}'"
+                    )
+                seen_target_ids[target["id"]] = target_name
         resolved_scrapes.append(scrape)
 
     return resolved_scrapes
@@ -453,6 +579,7 @@ def generate_config(
 
     host = copy.deepcopy(hosts[host_name])
     host.setdefault("extra_labels", {})
+    validate_labels_map(host["extra_labels"], f"Host '{host_name}' extra_labels")
     host_namespace = host.get("namespace")
 
     host_scrapes = resolve_scrapes_for_host(host, scrapes, stacks, host_name)
@@ -461,8 +588,16 @@ def generate_config(
         host, endpoints, required_signals, host_name
     )
     for endpoint_list in endpoints_to_use.values():
+        seen_endpoint_ids = {}
         for endpoint in endpoint_list:
             endpoint["id"] = to_identifier(endpoint.get("name"))
+            if endpoint["id"] in seen_endpoint_ids:
+                previous = seen_endpoint_ids[endpoint["id"]]
+                error(
+                    f"Endpoints '{previous}' and '{endpoint.get('name')}' "
+                    f"on host '{host_name}' normalize to the same identifier '{endpoint['id']}'"
+                )
+            seen_endpoint_ids[endpoint["id"]] = endpoint.get("name")
 
     timestamp = None
     if include_timestamp:
