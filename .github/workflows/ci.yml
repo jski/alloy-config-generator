@@ -7,8 +7,12 @@ on:
       - main
 
 jobs:
-  test:
+  lint-test-examples:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.12"]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -16,7 +20,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python-version }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v3
@@ -32,19 +36,6 @@ jobs:
       - name: Run tests
         run: uv run pytest -q
 
-      - name: Build artifacts
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          uv pip install hatch
-          uv run hatch build
-
-      - name: Upload artifacts
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/*
-
       - name: Validate generated.example outputs
         run: |
           uv run alloygen --examples
@@ -53,6 +44,41 @@ jobs:
             git status --porcelain generated.example
             exit 1
           fi
+
+  package:
+    runs-on: ubuntu-latest
+    needs: lint-test-examples
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Build artifacts
+        run: uv build
+
+      - name: Install built wheel
+        run: |
+          uv venv
+          uv pip install --force-reinstall dist/*.whl
+
+      - name: Smoke test installed CLI
+        run: |
+          uv run alloygen --version
+          uv run alloygen --help
+
+      - name: Upload artifacts
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
 
   version-guard:
     runs-on: ubuntu-latest
