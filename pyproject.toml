@@ -18,6 +18,7 @@ alloygen = "alloy_config_generator.cli:main"
 
 [project.optional-dependencies]
 dev = [
+  "ruff>=0.6",
   "pytest>=7.4",
 ]
 

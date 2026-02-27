@@ -261,10 +261,10 @@ loki.process "{{ scrape.id }}" {
   }
 }
 
-prometheus.relabel "{{ scrape.name }}" {
+prometheus.relabel "{{ scrape.id }}" {
   forward_to = [
 {%- for endpoint in prometheus_endpoints %}
-    prometheus.remote_write.{{ endpoint.name }}.receiver,
+    prometheus.remote_write.{{ endpoint.id }}.receiver,
 {%- endfor %}
   ]
 

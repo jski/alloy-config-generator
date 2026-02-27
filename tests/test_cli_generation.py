@@ -131,3 +131,76 @@ def test_manifest_hashes_with_relative_definitions_dir(tmp_path, monkeypatch):
 
     manifest_path = out_dir / "manifest.json"
     assert manifest_path.exists()
+
+
+def test_logs_journal_uses_identifier_safe_component_names(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: shockwave-grafana",
+                "scrapes:",
+                "  - systemd-journal",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "systemd-journal.yaml").write_text(
+        "\n".join(
+            [
+                "name: systemd-journal",
+                "type: logs-journal",
+                "labels:",
+                "  job: systemd-journal",
+                "relabel_rules: []",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "shockwave-grafana.yaml").write_text(
+        "\n".join(
+            [
+                "name: shockwave-grafana",
+                "loki:",
+                "  enabled: true",
+                "  url: https://loki.example.com/loki/api/v1/push",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "out"
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(out_dir),
+        "--definitions-dir",
+        str(defs),
+        "--format",
+        "alloy",
+        "--no-manifest",
+    ]
+    subprocess.run(cmd, check=True)
+
+    alloy_text = (out_dir / "demo.alloy").read_text(encoding="utf-8")
+    assert 'prometheus.relabel "systemd_journal"' in alloy_text
+    assert "prometheus.remote_write.shockwave_grafana.receiver" in alloy_text
+    assert 'replacement  = "systemd-journal"' in alloy_text
+    assert 'prometheus.relabel "systemd-journal"' not in alloy_text
+    assert "prometheus.remote_write.shockwave-grafana.receiver" not in alloy_text

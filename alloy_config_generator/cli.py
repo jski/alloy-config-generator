@@ -57,7 +57,9 @@ def resolve_env_vars(value, resolve_env):
 def resolve_all_env_vars(data, resolve_env):
     """Recursively resolve environment variables in YAML data."""
     if isinstance(data, dict):
-        return {key: resolve_all_env_vars(value, resolve_env) for key, value in data.items()}
+        return {
+            key: resolve_all_env_vars(value, resolve_env) for key, value in data.items()
+        }
     if isinstance(data, list):
         return [resolve_all_env_vars(item, resolve_env) for item in data]
     if isinstance(data, str):
@@ -243,7 +245,9 @@ def collect_input_hashes(definitions_root):
 
     templates_dir = root / "templates"
     if templates_dir.exists():
-        template_paths = sorted(templates_dir.glob("*.j2"), key=lambda p: p.as_posix().lower())
+        template_paths = sorted(
+            templates_dir.glob("*.j2"), key=lambda p: p.as_posix().lower()
+        )
         for path in template_paths:
             rel_path = path.relative_to(root).as_posix()
             inputs[rel_path] = hash_file(path)
@@ -287,11 +291,15 @@ def resolve_endpoints_for_host(host, endpoints, required_signals, host_name):
             if isinstance(endpoint_names, str):
                 endpoint_names = [endpoint_names]
             if signal_type not in endpoints_to_use:
-                warn(f"Host '{host_name}' references unsupported endpoint type '{signal_type}'")
+                warn(
+                    f"Host '{host_name}' references unsupported endpoint type '{signal_type}'"
+                )
                 continue
             for endpoint_name in endpoint_names:
                 if endpoint_name not in endpoints:
-                    error(f"Endpoint '{endpoint_name}' not found for host '{host_name}'")
+                    error(
+                        f"Endpoint '{endpoint_name}' not found for host '{host_name}'"
+                    )
                 endpoint = endpoints[endpoint_name]
                 if endpoint_enabled(endpoint, signal_type):
                     endpoints_to_use[signal_type].append(endpoint)
@@ -329,13 +337,24 @@ def resolve_endpoints_for_host(host, endpoints, required_signals, host_name):
 def validate_scrape(scrape, scrape_name, host_name):
     """Validate and apply safe defaults to a scrape definition."""
     scrape_type = scrape.get("type")
-    if scrape_type not in {"logs", "logs-journal", "logs-k8s", "metrics", "metrics-k8s", "metrics-k8s-pods"}:
-        error(f"Scrape '{scrape_name}' on host '{host_name}' has unsupported type '{scrape_type}'")
+    if scrape_type not in {
+        "logs",
+        "logs-journal",
+        "logs-k8s",
+        "metrics",
+        "metrics-k8s",
+        "metrics-k8s-pods",
+    }:
+        error(
+            f"Scrape '{scrape_name}' on host '{host_name}' has unsupported type '{scrape_type}'"
+        )
 
     scrape.setdefault("labels", {})
     if "job" not in scrape["labels"]:
         scrape["labels"]["job"] = scrape_name
-        warn(f"Scrape '{scrape_name}' on host '{host_name}' missing labels.job; defaulting to '{scrape_name}'")
+        warn(
+            f"Scrape '{scrape_name}' on host '{host_name}' missing labels.job; defaulting to '{scrape_name}'"
+        )
 
     if scrape_type in {"metrics", "metrics-k8s"}:
         scrape.setdefault("scrape_interval", "30s")
@@ -343,11 +362,19 @@ def validate_scrape(scrape, scrape_name, host_name):
         scrape.setdefault("scrape_interval", "30s")
         scrape.setdefault("role", "pod")
 
-    if scrape_type == "metrics" and not scrape.get("targets") and not scrape.get("endpoint"):
-        error(f"Scrape '{scrape_name}' on host '{host_name}' must define 'endpoint' or 'targets'")
+    if (
+        scrape_type == "metrics"
+        and not scrape.get("targets")
+        and not scrape.get("endpoint")
+    ):
+        error(
+            f"Scrape '{scrape_name}' on host '{host_name}' must define 'endpoint' or 'targets'"
+        )
 
     if scrape_type == "logs" and not scrape.get("targets") and not scrape.get("paths"):
-        error(f"Scrape '{scrape_name}' on host '{host_name}' must define 'paths' or 'targets'")
+        error(
+            f"Scrape '{scrape_name}' on host '{host_name}' must define 'paths' or 'targets'"
+        )
 
     if scrape_type == "logs-journal":
         scrape.setdefault("path", "/var/log/journal")
@@ -416,7 +443,9 @@ def render_configmap(host_name, config_text, name_template, namespace, config_ke
     return "\n".join(lines) + "\n"
 
 
-def generate_config(host_name, hosts, endpoints, scrapes, stacks, template, include_timestamp):
+def generate_config(
+    host_name, hosts, endpoints, scrapes, stacks, template, include_timestamp
+):
     """Generate Alloy config for a specific host."""
     if host_name not in hosts:
         available = ", ".join(sorted(hosts.keys()))
@@ -428,7 +457,9 @@ def generate_config(host_name, hosts, endpoints, scrapes, stacks, template, incl
 
     host_scrapes = resolve_scrapes_for_host(host, scrapes, stacks, host_name)
     required_signals = compute_required_signals(host_scrapes)
-    endpoints_to_use = resolve_endpoints_for_host(host, endpoints, required_signals, host_name)
+    endpoints_to_use = resolve_endpoints_for_host(
+        host, endpoints, required_signals, host_name
+    )
     for endpoint_list in endpoints_to_use.values():
         for endpoint in endpoint_list:
             endpoint["id"] = to_identifier(endpoint.get("name"))
@@ -469,7 +500,9 @@ def write_manifests(output_dir, outputs, manifest_enabled, settings, definitions
     }
 
     manifest_json_path = output_dir / "manifest.json"
-    write_text(manifest_json_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
+    write_text(
+        manifest_json_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    )
 
     sha_entries = []
     for host_outputs in outputs.values():
@@ -504,8 +537,17 @@ def parse_args():
         help="Show version and exit",
     )
     parser.add_argument("host", nargs="?", help="Host name to generate")
-    parser.add_argument("--all", action="store_true", dest="generate_all", help="Generate configs for all hosts")
-    parser.add_argument("--output-dir", default="generated", help="Output directory for generated artifacts")
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        dest="generate_all",
+        help="Generate configs for all hosts",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="generated",
+        help="Output directory for generated artifacts",
+    )
     parser.add_argument(
         "--examples",
         action="store_true",
@@ -538,8 +580,16 @@ def parse_args():
         default="alloy-config-{host}",
         help="ConfigMap name template (supports {host})",
     )
-    parser.add_argument("--configmap-key", default="config.alloy", help="Key name for the config in the ConfigMap")
-    parser.add_argument("--namespace", default=None, help="Kubernetes namespace for generated ConfigMaps")
+    parser.add_argument(
+        "--configmap-key",
+        default="config.alloy",
+        help="Key name for the config in the ConfigMap",
+    )
+    parser.add_argument(
+        "--namespace",
+        default=None,
+        help="Kubernetes namespace for generated ConfigMaps",
+    )
     parser.add_argument(
         "--resolve-env",
         action="store_true",
@@ -550,7 +600,9 @@ def parse_args():
         action="store_true",
         help="Include a generation timestamp in configs (reduces determinism)",
     )
-    parser.add_argument("--no-manifest", action="store_true", help="Do not generate manifest files")
+    parser.add_argument(
+        "--no-manifest", action="store_true", help="Do not generate manifest files"
+    )
     parser.add_argument(
         "--include-disabled",
         action="store_true",
@@ -665,24 +717,28 @@ def main():
     root = Path.cwd().resolve()
     if not args.include_disabled:
         hosts = {
-            name: data
-            for name, data in hosts.items()
-            if data.get("enabled", True)
+            name: data for name, data in hosts.items() if data.get("enabled", True)
         }
     if not hosts:
-        error("No enabled hosts found. Use --include-disabled to generate disabled hosts.")
+        error(
+            "No enabled hosts found. Use --include-disabled to generate disabled hosts."
+        )
 
     host_names = sorted(hosts.keys()) if args.generate_all else [args.host]
 
     if generate_argocd and args.k8s_output_dir is None:
         k8s_output_dir = output_dir / "k8s"
     else:
-        k8s_output_dir = Path(args.k8s_output_dir) if args.k8s_output_dir else output_dir
+        k8s_output_dir = (
+            Path(args.k8s_output_dir) if args.k8s_output_dir else output_dir
+        )
 
     if generate_argocd and args.alloy_output_dir is None:
         alloy_output_dir = output_dir / "alloy"
     else:
-        alloy_output_dir = Path(args.alloy_output_dir) if args.alloy_output_dir else output_dir
+        alloy_output_dir = (
+            Path(args.alloy_output_dir) if args.alloy_output_dir else output_dir
+        )
 
     if generate_alloy:
         alloy_output_dir.mkdir(parents=True, exist_ok=True)
@@ -694,9 +750,13 @@ def main():
     outputs = {}
     if args.clean:
         if generate_alloy:
-            clean_outputs(alloy_output_dir, host_names, clean_alloy=True, clean_configmap=False)
+            clean_outputs(
+                alloy_output_dir, host_names, clean_alloy=True, clean_configmap=False
+            )
         if generate_configmap and not k8s_per_host:
-            clean_outputs(k8s_output_dir, host_names, clean_alloy=False, clean_configmap=True)
+            clean_outputs(
+                k8s_output_dir, host_names, clean_alloy=False, clean_configmap=True
+            )
         if k8s_per_host:
             clean_k8s_host_dirs(k8s_output_dir, host_names)
     for host_name in host_names:
@@ -715,11 +775,16 @@ def main():
         if k8s_per_host:
             k8s_host_dir.mkdir(parents=True, exist_ok=True)
         if generate_alloy:
-            output_filename = hosts[host_name].get("output_filename", f"{host_name}.alloy")
+            output_filename = hosts[host_name].get(
+                "output_filename", f"{host_name}.alloy"
+            )
             alloy_path = alloy_output_dir / output_filename
             write_text(alloy_path, config)
             rel_alloy_path = relativize(alloy_path, root)
-            host_outputs["alloy"] = {"path": rel_alloy_path, "sha256": hash_text(config)}
+            host_outputs["alloy"] = {
+                "path": rel_alloy_path,
+                "sha256": hash_text(config),
+            }
             print(f"Generated: {rel_alloy_path}")
 
         if generate_configmap:
@@ -740,7 +805,10 @@ def main():
             configmap_path = k8s_host_dir / f"{host_name}.configmap.yaml"
             write_text(configmap_path, configmap_text)
             rel_configmap_path = relativize(configmap_path, root)
-            host_outputs["configmap"] = {"path": rel_configmap_path, "sha256": hash_text(configmap_text)}
+            host_outputs["configmap"] = {
+                "path": rel_configmap_path,
+                "sha256": hash_text(configmap_text),
+            }
             print(f"Generated: {rel_configmap_path}")
 
         if generate_argocd:
@@ -763,7 +831,10 @@ def main():
             argocd_path = k8s_host_dir / f"{host_name}.argocd-app.yaml"
             write_text(argocd_path, argocd_text)
             rel_argocd_path = relativize(argocd_path, root)
-            host_outputs["argocd_app"] = {"path": rel_argocd_path, "sha256": hash_text(argocd_text)}
+            host_outputs["argocd_app"] = {
+                "path": rel_argocd_path,
+                "sha256": hash_text(argocd_text),
+            }
             print(f"Generated: {rel_argocd_path}")
 
         outputs[host_name] = host_outputs
