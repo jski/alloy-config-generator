@@ -1,0 +1,7 @@
+name: shockwave
+description: Docker node
+deployment_type: docker
+endpoint: shockwave-grafana
+stack: docker-node
+extra_labels:
+  site: rack-a

@@ -1,0 +1,16 @@
+defaults:
+  docker:
+    env: homelab
+    site: lan
+    platform: linux
+    role: docker
+  kubernetes:
+    env: oracle
+    site: remote
+    platform: kubernetes
+
+identity_label_by_deployment:
+  docker: host
+  kubernetes: cluster
+
+host_overrides: {}

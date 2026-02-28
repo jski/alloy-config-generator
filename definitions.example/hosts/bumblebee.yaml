@@ -17,9 +17,3 @@ endpoints:
   loki:
     - optimus-grafana
     - bumblebee-grafana
-
-extra_labels:
-  env: oracle
-  site: remote
-  platform: kubernetes
-  cluster: bumblebee

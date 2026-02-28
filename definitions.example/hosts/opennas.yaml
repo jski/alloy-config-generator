@@ -17,10 +17,3 @@ endpoints:
   loki:
     - optimus-grafana
     - bumblebee-grafana
-
-extra_labels:
-  env: homelab
-  site: lan
-  platform: linux
-  role: docker
-  host: opennas

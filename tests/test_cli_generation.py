@@ -5,6 +5,8 @@ from pathlib import Path
 
 FIXTURE_DIR = Path(__file__).parent / "fixtures" / "basic"
 DEFINITIONS_DIR = FIXTURE_DIR / "definitions.example"
+POLICY_FIXTURE_DIR = Path(__file__).parent / "fixtures" / "policy"
+POLICY_DEFINITIONS_DIR = POLICY_FIXTURE_DIR / "definitions.example"
 
 
 def run_cli(tmp_path, extra_args, no_manifest=True):
@@ -26,7 +28,32 @@ def run_cli(tmp_path, extra_args, no_manifest=True):
     return out_dir
 
 
-def run_cli_with_definitions(definitions_dir, output_dir, capture_output=False):
+def run_cli_from_fixture(
+    tmp_path, fixture_dir, definitions_dir, extra_args, no_manifest=True
+):
+    out_dir = tmp_path / "out"
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(out_dir),
+        "--definitions-dir",
+        str(definitions_dir),
+        *extra_args,
+    ]
+    if no_manifest:
+        cmd.append("--no-manifest")
+    subprocess.run(cmd, check=True, cwd=fixture_dir)
+    return out_dir
+
+
+def run_cli_with_definitions(
+    definitions_dir, output_dir, capture_output=False, extra_args=None
+):
+    if extra_args is None:
+        extra_args = []
     cmd = [
         sys.executable,
         "-m",
@@ -39,6 +66,7 @@ def run_cli_with_definitions(definitions_dir, output_dir, capture_output=False):
         "--format",
         "alloy",
         "--no-manifest",
+        *extra_args,
     ]
     return subprocess.run(
         cmd,
@@ -506,7 +534,7 @@ def test_rejects_invalid_relabel_action(tmp_path):
     assert "invalid action" in result.stdout
 
 
-def test_rejects_metrics_endpoint_with_scheme_and_path(tmp_path):
+def test_parses_metrics_endpoint_with_scheme_and_path(tmp_path):
     defs = tmp_path / "definitions"
     (defs / "hosts").mkdir(parents=True)
     (defs / "scrapes").mkdir(parents=True)
@@ -553,12 +581,13 @@ def test_rejects_metrics_endpoint_with_scheme_and_path(tmp_path):
     )
 
     result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
-    assert result.returncode != 0
-    assert "must be host:port without scheme" in result.stdout
-    assert "metrics_path" in result.stdout
+    assert result.returncode == 0
+    alloy_text = (tmp_path / "out" / "demo.alloy").read_text(encoding="utf-8")
+    assert '{"__address__" = "localhost:9100"}' in alloy_text
+    assert 'metrics_path = "/metrics"' in alloy_text
 
 
-def test_rejects_metrics_endpoint_with_path_only(tmp_path):
+def test_parses_metrics_endpoint_with_path_only(tmp_path):
     defs = tmp_path / "definitions"
     (defs / "hosts").mkdir(parents=True)
     (defs / "scrapes").mkdir(parents=True)
@@ -605,9 +634,10 @@ def test_rejects_metrics_endpoint_with_path_only(tmp_path):
     )
 
     result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
-    assert result.returncode != 0
-    assert "must not include path '/metrics'" in result.stdout
-    assert "set metrics_path to '/metrics'" in result.stdout
+    assert result.returncode == 0
+    alloy_text = (tmp_path / "out" / "demo.alloy").read_text(encoding="utf-8")
+    assert '{"__address__" = "localhost:9100"}' in alloy_text
+    assert 'metrics_path = "/metrics"' in alloy_text
 
 
 def test_rejects_metrics_path_without_leading_slash(tmp_path):
@@ -714,3 +744,258 @@ def test_renders_metrics_path_for_single_endpoint_scrape(tmp_path):
 
     alloy_text = (tmp_path / "out" / "demo.alloy").read_text(encoding="utf-8")
     assert 'metrics_path = "/probe"' in alloy_text
+
+
+def test_rejects_conflicting_metrics_path_from_endpoint(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: https://localhost:9100/metrics",
+                "metrics_path: /custom",
+                "labels:",
+                "  job: node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
+    assert result.returncode != 0
+    assert "conflicting metrics_path values" in result.stdout
+
+
+def test_host_label_policy_merge_precedence_static_mode(tmp_path):
+    out_dir = run_cli_from_fixture(
+        tmp_path,
+        fixture_dir=POLICY_FIXTURE_DIR,
+        definitions_dir=POLICY_DEFINITIONS_DIR,
+        extra_args=["--format", "alloy"],
+    )
+
+    shockwave_alloy = (out_dir / "shockwave.alloy").read_text(encoding="utf-8")
+    assert 'target_label = "site"' in shockwave_alloy
+    assert 'replacement  = "rack-a"' in shockwave_alloy
+    assert 'target_label = "host"' in shockwave_alloy
+    assert 'replacement  = "shockwave"' in shockwave_alloy
+    assert 'target_label = "env"' in shockwave_alloy
+    assert 'replacement  = "prod"' in shockwave_alloy
+
+    k8s_alloy = (out_dir / "dboraclevmwest.alloy").read_text(encoding="utf-8")
+    assert 'target_label = "cluster"' in k8s_alloy
+    assert 'replacement  = "dboraclevmwest"' in k8s_alloy
+
+
+def test_host_label_policy_missing_file_falls_back_to_extra_labels(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "extra_labels:",
+                "  site: edge",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100",
+                "labels:",
+                "  job: node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
+    assert result.returncode == 0
+    alloy_text = (tmp_path / "out" / "demo.alloy").read_text(encoding="utf-8")
+    assert 'target_label = "site"' in alloy_text
+    assert 'replacement  = "edge"' in alloy_text
+    assert 'target_label = "host"' not in alloy_text
+    assert 'target_label = "cluster"' not in alloy_text
+
+
+def test_relabel_policy_mode_wires_metrics_relabel_chain(tmp_path):
+    out_dir = run_cli_from_fixture(
+        tmp_path,
+        fixture_dir=POLICY_FIXTURE_DIR,
+        definitions_dir=POLICY_DEFINITIONS_DIR,
+        extra_args=["--format", "alloy", "--label-policy-mode", "relabel"],
+    )
+
+    shockwave_alloy = (out_dir / "shockwave.alloy").read_text(encoding="utf-8")
+    assert 'prometheus.relabel "host_policy" {' in shockwave_alloy
+    assert "prometheus.relabel.host_policy.receiver" in shockwave_alloy
+    assert "prometheus.remote_write.shockwave_grafana.receiver" in shockwave_alloy
+    assert (
+        'prometheus.relabel "node_exporter_docker" {\n'
+        "  forward_to = [\n"
+        "    prometheus.relabel.host_policy.receiver,\n"
+        "  ]"
+    ) in shockwave_alloy
+    assert 'target_label = "host"' in shockwave_alloy
+    assert 'replacement  = "shockwave"' in shockwave_alloy
+
+
+def test_identifier_sanitization_for_hyphenated_fixture_names(tmp_path):
+    out_dir = run_cli_from_fixture(
+        tmp_path,
+        fixture_dir=POLICY_FIXTURE_DIR,
+        definitions_dir=POLICY_DEFINITIONS_DIR,
+        extra_args=["--format", "alloy"],
+    )
+    shockwave_alloy = (out_dir / "shockwave.alloy").read_text(encoding="utf-8")
+    assert 'prometheus.scrape "node_exporter_docker"' in shockwave_alloy
+    assert 'prometheus.relabel "node_exporter_docker"' in shockwave_alloy
+    assert "prometheus.remote_write.shockwave_grafana.receiver" in shockwave_alloy
+    assert 'prometheus.scrape "node-exporter-docker"' not in shockwave_alloy
+    assert "prometheus.remote_write.shockwave-grafana.receiver" not in shockwave_alloy
+
+
+def test_escapes_backslashes_in_relabel_regex(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - node",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "node.yaml").write_text(
+        "\n".join(
+            [
+                "name: node",
+                "type: metrics",
+                "endpoint: localhost:9100",
+                "labels:",
+                "  job: node",
+                "relabel_rules:",
+                "  - action: replace",
+                "    source_labels: [instance]",
+                "    target_label: host",
+                '    regex: "([^:]+)(?::\\\\d+)?"',
+                '    replacement: "$1"',
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "prometheus:",
+                "  enabled: true",
+                "  url: https://prom.example.com/api/v1/write",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
+    assert result.returncode == 0
+    alloy_text = (tmp_path / "out" / "demo.alloy").read_text(encoding="utf-8")
+    assert 'regex = "([^:]+)(?::\\\\d+)?"' in alloy_text
+
+
+def test_no_manifest_creates_no_manifest_files(tmp_path):
+    out_dir = run_cli(tmp_path, ["--format", "both"], no_manifest=True)
+    assert not (out_dir / "manifest.json").exists()
+    assert not (out_dir / "manifest.sha256").exists()
+
+
+def test_policy_fixture_outputs_are_deterministic(tmp_path):
+    out_a = run_cli_from_fixture(
+        tmp_path / "run_a",
+        fixture_dir=POLICY_FIXTURE_DIR,
+        definitions_dir=POLICY_DEFINITIONS_DIR,
+        extra_args=["--format", "alloy"],
+    )
+    out_b = run_cli_from_fixture(
+        tmp_path / "run_b",
+        fixture_dir=POLICY_FIXTURE_DIR,
+        definitions_dir=POLICY_DEFINITIONS_DIR,
+        extra_args=["--format", "alloy"],
+    )
+    files_a = sorted(p for p in out_a.rglob("*") if p.is_file())
+    files_b = sorted(p for p in out_b.rglob("*") if p.is_file())
+    rel_a = [p.relative_to(out_a).as_posix() for p in files_a]
+    rel_b = [p.relative_to(out_b).as_posix() for p in files_b]
+    assert rel_a == rel_b
+    for rel in rel_a:
+        assert (out_a / rel).read_text(encoding="utf-8") == (out_b / rel).read_text(
+            encoding="utf-8"
+        )

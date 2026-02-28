@@ -1,0 +1,4 @@
+name: shockwave-grafana
+prometheus:
+  enabled: true
+  url: https://prom.example.com/api/v1/write

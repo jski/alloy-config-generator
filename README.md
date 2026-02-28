@@ -54,6 +54,7 @@ alloygen --examples
 ```
 definitions.example/ # public-safe example inputs
 definitions/         # private, real configs (ignored by git)
+  host-label-policy.yaml # optional centralized host label policy
   endpoints/         # where data is sent
   scrapes/           # what is collected
   hosts/             # which host uses what
@@ -118,8 +119,10 @@ labels:
   job: node
 ```
 
-For `type: metrics`, `endpoint` / `targets[].address` must be `host:port` only.
-Do not include `http://`, `https://`, or `/metrics` in the address; use `metrics_path`.
+For `type: metrics`, preferred input is `host:port` with explicit `metrics_path`.
+Full URL inputs are also supported and normalized automatically:
+- `__address__` uses `host:port`
+- `metrics_path` is derived from the URL path
 
 Host (`definitions/hosts/host-01.yaml`):
 ```yaml
@@ -155,6 +158,38 @@ targets:
   - name: node_b
     address: node-b:9100
 ```
+
+Centralized host labels (optional `definitions/host-label-policy.yaml`):
+```yaml
+defaults:
+  docker:
+    platform: docker
+  kubernetes:
+    platform: kubernetes
+
+identity_label_by_deployment:
+  docker: host
+  kubernetes: cluster
+
+host_overrides:
+  shockwave:
+    env: prod
+```
+
+Label precedence is:
+1. `defaults[deployment_type]`
+2. `host_overrides[host.name]`
+3. identity label (`host`/`cluster`) set to host `name`
+4. host `extra_labels` (last-write-wins)
+
+You can also switch metrics label injection mode:
+```bash
+alloygen --all --label-policy-mode static   # default
+alloygen --all --label-policy-mode relabel  # shared host policy relabel component
+```
+
+The committed `definitions.example/host-label-policy.yaml` shows a working pattern
+for mixed Docker + Kubernetes environments.
 
 ## Output Formats
 

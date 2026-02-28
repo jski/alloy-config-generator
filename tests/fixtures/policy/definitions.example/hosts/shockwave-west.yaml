@@ -1,0 +1,5 @@
+name: shockwave-west
+description: Hyphenated host name
+deployment_type: docker
+endpoint: shockwave-grafana
+stack: docker-node
