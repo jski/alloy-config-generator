@@ -1,0 +1,5 @@
+name: dboraclevmwest
+description: Kubernetes node
+deployment_type: kubernetes
+endpoint: shockwave-grafana
+stack: k8s-node

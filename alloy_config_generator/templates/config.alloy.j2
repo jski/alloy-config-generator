@@ -61,7 +61,7 @@ loki.process "{{ scrape.id }}" {
 {%- for key, value in scrape.labels.items() %}
       {{ key }} = "{{ value }}",
 {%- endfor %}
-{%- for key, value in host.extra_labels.items() %}
+{%- for key, value in host.resolved_extra_labels.items() %}
       {{ key }} = "{{ value }}",
 {%- endfor %}
     }
@@ -111,9 +111,13 @@ prometheus.scrape "{{ scrape.id }}" {
 
 prometheus.relabel "{{ scrape.id }}" {
   forward_to = [
+{%- if label_policy_mode == "relabel" %}
+    prometheus.relabel.{{ host_policy_relabel_id }}.receiver,
+{%- else %}
 {%- for endpoint in prometheus_endpoints %}
     prometheus.remote_write.{{ endpoint.id }}.receiver,
 {%- endfor %}
+{%- endif %}
   ]
 
 {% if scrape.relabel_rules %}
@@ -146,12 +150,14 @@ prometheus.relabel "{{ scrape.id }}" {
     replacement  = "{{ scrape.labels.job }}"
   }
 
-{%- for key, value in host.extra_labels.items() %}
+{%- if label_policy_mode == "static" %}
+{%- for key, value in host.resolved_extra_labels.items() %}
   rule {
     target_label = "{{ key }}"
     replacement  = "{{ value }}"
   }
 {%- endfor %}
+{%- endif %}
 }
 
 {% elif scrape.type == 'metrics-k8s' %}
@@ -174,9 +180,13 @@ prometheus.scrape "{{ scrape.id }}" {
 
 prometheus.relabel "{{ scrape.id }}" {
   forward_to = [
+{%- if label_policy_mode == "relabel" %}
+    prometheus.relabel.{{ host_policy_relabel_id }}.receiver,
+{%- else %}
 {%- for endpoint in prometheus_endpoints %}
     prometheus.remote_write.{{ endpoint.id }}.receiver,
 {%- endfor %}
+{%- endif %}
   ]
 
 {% if scrape.relabel_rules %}
@@ -209,12 +219,14 @@ prometheus.relabel "{{ scrape.id }}" {
     replacement  = "{{ scrape.labels.job }}"
   }
 
-{%- for key, value in host.extra_labels.items() %}
+{%- if label_policy_mode == "static" %}
+{%- for key, value in host.resolved_extra_labels.items() %}
   rule {
     target_label = "{{ key }}"
     replacement  = "{{ value }}"
   }
 {%- endfor %}
+{%- endif %}
 }
 
 {% elif scrape.type == 'logs-journal' %}
@@ -266,7 +278,7 @@ loki.process "{{ scrape.id }}" {
 
   stage.static_labels {
     values = {
-{%- for key, value in host.extra_labels.items() %}
+{%- for key, value in host.resolved_extra_labels.items() %}
       {{ key }} = "{{ value }}",
 {%- endfor %}
     }
@@ -275,9 +287,13 @@ loki.process "{{ scrape.id }}" {
 
 prometheus.relabel "{{ scrape.id }}" {
   forward_to = [
+{%- if label_policy_mode == "relabel" %}
+    prometheus.relabel.{{ host_policy_relabel_id }}.receiver,
+{%- else %}
 {%- for endpoint in prometheus_endpoints %}
     prometheus.remote_write.{{ endpoint.id }}.receiver,
 {%- endfor %}
+{%- endif %}
   ]
 
 {% if scrape.relabel_rules %}
@@ -310,12 +326,14 @@ prometheus.relabel "{{ scrape.id }}" {
     replacement  = "{{ scrape.labels.job }}"
   }
 
-{%- for key, value in host.extra_labels.items() %}
+{%- if label_policy_mode == "static" %}
+{%- for key, value in host.resolved_extra_labels.items() %}
   rule {
     target_label = "{{ key }}"
     replacement  = "{{ value }}"
   }
 {%- endfor %}
+{%- endif %}
 }
 
 {% elif scrape.type == 'logs-k8s' %}
@@ -340,7 +358,7 @@ loki.process "{{ scrape.id }}" {
 {%- for key, value in scrape.labels.items() %}
       {{ key }} = "{{ value }}",
 {%- endfor %}
-{%- for key, value in host.extra_labels.items() %}
+{%- for key, value in host.resolved_extra_labels.items() %}
       {{ key }} = "{{ value }}",
 {%- endfor %}
     }
@@ -367,9 +385,13 @@ prometheus.scrape "{{ scrape.id }}" {
 
 prometheus.relabel "{{ scrape.id }}" {
   forward_to = [
+{%- if label_policy_mode == "relabel" %}
+    prometheus.relabel.{{ host_policy_relabel_id }}.receiver,
+{%- else %}
 {%- for endpoint in prometheus_endpoints %}
     prometheus.remote_write.{{ endpoint.id }}.receiver,
 {%- endfor %}
+{%- endif %}
   ]
 
 {% if scrape.relabel_rules %}
@@ -402,7 +424,28 @@ prometheus.relabel "{{ scrape.id }}" {
     replacement  = "{{ scrape.labels.job }}"
   }
 
-{%- for key, value in host.extra_labels.items() %}
+{%- if label_policy_mode == "static" %}
+{%- for key, value in host.resolved_extra_labels.items() %}
+  rule {
+    target_label = "{{ key }}"
+    replacement  = "{{ value }}"
+  }
+{%- endfor %}
+{%- endif %}
+}
+
+{% endif %}
+{% endfor %}
+
+{%- if label_policy_mode == "relabel" and host_policy_relabel_id %}
+prometheus.relabel "{{ host_policy_relabel_id }}" {
+  forward_to = [
+{%- for endpoint in prometheus_endpoints %}
+    prometheus.remote_write.{{ endpoint.id }}.receiver,
+{%- endfor %}
+  ]
+
+{%- for key, value in host.resolved_extra_labels.items() %}
   rule {
     target_label = "{{ key }}"
     replacement  = "{{ value }}"
@@ -410,8 +453,7 @@ prometheus.relabel "{{ scrape.id }}" {
 {%- endfor %}
 }
 
-{% endif %}
-{% endfor %}
+{%- endif %}
 
 // ========== RECEIVERS ==========
 

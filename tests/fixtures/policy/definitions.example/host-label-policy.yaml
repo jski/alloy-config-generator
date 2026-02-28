@@ -1,0 +1,20 @@
+defaults:
+  docker:
+    platform: docker
+    site: default-site
+  kubernetes:
+    platform: kubernetes
+    site: default-site
+
+identity_label_by_deployment:
+  docker: host
+  kubernetes: cluster
+
+host_overrides:
+  shockwave:
+    env: prod
+    site: dc-west
+  dboraclevmwest:
+    env: prod-west
+  shockwave-west:
+    env: canary

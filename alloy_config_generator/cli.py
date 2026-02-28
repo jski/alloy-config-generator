@@ -14,10 +14,12 @@ import shutil
 import subprocess
 import sys
 import textwrap
+from collections import OrderedDict
 from datetime import datetime, timezone
 from importlib import resources
 from importlib.metadata import PackageNotFoundError, version as pkg_version
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 from jinja2 import Template
@@ -46,6 +48,13 @@ RELABEL_ACTIONS_REQUIRE_TARGET_LABEL = {
     "lowercase",
     "replace",
     "uppercase",
+}
+METRICS_SCRAPE_TYPES = {"metrics", "metrics-k8s", "metrics-k8s-pods"}
+PROM_RELABEL_SCRAPE_TYPES = {
+    "metrics",
+    "metrics-k8s",
+    "metrics-k8s-pods",
+    "logs-journal",
 }
 
 
@@ -162,6 +171,151 @@ def validate_relabel_rules(relabel_rules, context):
                 error(f"{context}[{idx}].{field} must be a string")
 
 
+def load_host_label_policy(definitions_root, resolve_env):
+    """Load optional host label policy from definitions/host-label-policy.yaml."""
+    policy_path = Path(definitions_root) / "host-label-policy.yaml"
+    if not policy_path.exists():
+        return None
+
+    raw_policy = load_yaml(policy_path, resolve_env)
+    if raw_policy is None:
+        return None
+    if not isinstance(raw_policy, dict):
+        error(f"{policy_path} must contain a YAML object")
+
+    defaults = raw_policy.get("defaults", {})
+    identity_label_by_deployment = raw_policy.get("identity_label_by_deployment", {})
+    host_overrides = raw_policy.get("host_overrides", {})
+
+    if not isinstance(defaults, dict):
+        error(f"{policy_path}: defaults must be a map keyed by deployment type")
+    if not isinstance(identity_label_by_deployment, dict):
+        error(
+            f"{policy_path}: identity_label_by_deployment must be a map keyed by deployment type"
+        )
+    if not isinstance(host_overrides, dict):
+        error(f"{policy_path}: host_overrides must be a map keyed by host name")
+
+    validated_defaults = OrderedDict()
+    for deployment_type, labels in defaults.items():
+        if not isinstance(deployment_type, str) or not deployment_type:
+            error(f"{policy_path}: defaults keys must be non-empty strings")
+        validate_labels_map(
+            labels,
+            f"{policy_path}: defaults.{deployment_type}",
+        )
+        validated_defaults[deployment_type] = dict(labels)
+
+    validated_identity_labels = OrderedDict()
+    for deployment_type, identity_label in identity_label_by_deployment.items():
+        if not isinstance(deployment_type, str) or not deployment_type:
+            error(
+                f"{policy_path}: identity_label_by_deployment keys must be non-empty strings"
+            )
+        validate_label_name(
+            identity_label,
+            f"{policy_path}: identity_label_by_deployment.{deployment_type}",
+        )
+        validated_identity_labels[deployment_type] = identity_label
+
+    validated_host_overrides = OrderedDict()
+    for host_name, labels in host_overrides.items():
+        if not isinstance(host_name, str) or not host_name:
+            error(f"{policy_path}: host_overrides keys must be non-empty strings")
+        validate_labels_map(
+            labels,
+            f"{policy_path}: host_overrides.{host_name}",
+        )
+        validated_host_overrides[host_name] = dict(labels)
+
+    return {
+        "defaults": validated_defaults,
+        "identity_label_by_deployment": validated_identity_labels,
+        "host_overrides": validated_host_overrides,
+    }
+
+
+def resolve_host_extra_labels(host_name, host, host_label_policy):
+    """Resolve host labels from policy + host overrides + explicit host.extra_labels."""
+    explicit_extra_labels = copy.deepcopy(host.get("extra_labels", {}))
+    validate_labels_map(
+        explicit_extra_labels,
+        f"Host '{host_name}' extra_labels",
+    )
+
+    if not host_label_policy:
+        return explicit_extra_labels
+
+    deployment_type = host.get("deployment_type")
+    resolved = OrderedDict()
+    defaults = host_label_policy.get("defaults", {})
+    host_overrides = host_label_policy.get("host_overrides", {})
+    identity_label_by_deployment = host_label_policy.get(
+        "identity_label_by_deployment", {}
+    )
+
+    if deployment_type in defaults:
+        resolved.update(defaults[deployment_type])
+    if host_name in host_overrides:
+        resolved.update(host_overrides[host_name])
+
+    identity_label = identity_label_by_deployment.get(deployment_type)
+    if identity_label:
+        resolved[identity_label] = host_name
+
+    resolved.update(explicit_extra_labels)
+
+    validate_labels_map(
+        resolved,
+        f"Host '{host_name}' resolved extra labels",
+    )
+    return dict(resolved)
+
+
+def _parse_metrics_address(address, context):
+    """Normalize metrics endpoint/target address into host:port and optional path."""
+    if not isinstance(address, str) or not address.strip():
+        error(f"{context} must be a non-empty string")
+
+    cleaned = address.strip()
+    parsed_path = None
+
+    if "://" in cleaned:
+        parsed = urlsplit(cleaned)
+        if parsed.scheme not in {"http", "https"}:
+            error(
+                f"{context} has unsupported URL scheme '{parsed.scheme}'. Use http or https."
+            )
+        if not parsed.netloc:
+            error(f"{context} URL must include a host. Got '{cleaned}'")
+        if parsed.query or parsed.fragment:
+            error(
+                f"{context} must not include query/fragment. Got '{cleaned}'. "
+                "Use scrape params instead."
+            )
+        cleaned = parsed.netloc
+        if parsed.path:
+            parsed_path = parsed.path
+    else:
+        if "?" in cleaned or "#" in cleaned:
+            error(
+                f"{context} must not include query/fragment. Got '{cleaned}'. "
+                "Use scrape params instead."
+            )
+        first_slash = cleaned.find("/")
+        if first_slash >= 0:
+            parsed_path = cleaned[first_slash:]
+            cleaned = cleaned[:first_slash]
+
+    if not cleaned:
+        error(f"{context} must include host[:port]. Got '{address}'")
+
+    if parsed_path and not parsed_path.startswith("/"):
+        error(f"{context} path must start with '/'. Got '{parsed_path}'")
+
+    return cleaned, parsed_path
+
+
 def validate_metrics_path(metrics_path, context):
     """Validate metrics_path for Prometheus scrapes."""
     if not isinstance(metrics_path, str) or not metrics_path:
@@ -177,35 +331,21 @@ def validate_metrics_path(metrics_path, context):
         )
 
 
+def escape_alloy_quoted_string(value):
+    """Escape a string for safe inclusion in quoted Alloy values."""
+    return (
+        str(value)
+        .replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+    )
+
+
 def validate_metrics_address(address, context):
-    """Validate a Prometheus scrape address (host:port only)."""
-    if not isinstance(address, str) or not address.strip():
-        error(f"{context} must be a non-empty string")
-
-    cleaned = address.strip()
-
-    if "://" in cleaned:
-        error(
-            f"{context} must be host:port without scheme. Got '{cleaned}'. "
-            "Move URL paths to metrics_path."
-        )
-
-    first_slash = cleaned.find("/")
-    if first_slash >= 0:
-        host_port = cleaned[:first_slash]
-        metrics_path = cleaned[first_slash:]
-        error(
-            f"{context} must not include path '{metrics_path}'. "
-            f"Set endpoint/address to '{host_port}' and set metrics_path to '{metrics_path}'."
-        )
-
-    if "?" in cleaned or "#" in cleaned:
-        error(
-            f"{context} must not include query/fragment. Got '{cleaned}'. "
-            "Use scrape params instead."
-        )
-
-    return cleaned
+    """Normalize a Prometheus scrape address to host:port and optional metrics_path."""
+    return _parse_metrics_address(address, context)
 
 
 def load_yaml(filepath, resolve_env):
@@ -253,6 +393,19 @@ def stable_unique(items):
         seen.add(item)
         result.append(item)
     return result
+
+
+def allocate_unique_identifier(base, used_identifiers):
+    """Allocate a unique identifier given a base and an in-use set."""
+    candidate = to_identifier(base)
+    if candidate not in used_identifiers:
+        return candidate
+    suffix = 2
+    while True:
+        candidate = to_identifier(f"{base}_{suffix}")
+        if candidate not in used_identifiers:
+            return candidate
+        suffix += 1
 
 
 def normalize_text(text):
@@ -490,7 +643,7 @@ def validate_scrape(scrape, scrape_name, host_name):
     if scrape_type == "metrics-k8s-pods":
         scrape.setdefault("scrape_interval", "30s")
         scrape.setdefault("role", "pod")
-    if scrape_type in {"metrics", "metrics-k8s", "metrics-k8s-pods"}:
+    if scrape_type in METRICS_SCRAPE_TYPES:
         metrics_path = scrape.get("metrics_path")
         if metrics_path is not None:
             validate_metrics_path(
@@ -525,6 +678,10 @@ def validate_scrape(scrape, scrape_name, host_name):
             scrape["relabel_rules"],
             f"Scrape '{scrape_name}' relabel_rules",
         )
+        for rule in scrape["relabel_rules"]:
+            for field in ("regex", "replacement", "separator"):
+                if rule.get(field) is not None:
+                    rule[field] = escape_alloy_quoted_string(rule[field])
 
     if scrape.get("targets"):
         for target_index, target in enumerate(scrape["targets"], start=1):
@@ -537,10 +694,19 @@ def validate_scrape(scrape, scrape_name, host_name):
                     f"Scrape '{scrape_name}' on host '{host_name}' "
                     f"target[{target_index}].address"
                 )
-                target["address"] = validate_metrics_address(
+                normalized_address, parsed_metrics_path = validate_metrics_address(
                     target.get("address"),
                     target_context,
                 )
+                target["address"] = normalized_address
+                if parsed_metrics_path:
+                    if scrape.get("metrics_path") is None:
+                        scrape["metrics_path"] = parsed_metrics_path
+                    elif scrape.get("metrics_path") != parsed_metrics_path:
+                        error(
+                            f"Scrape '{scrape_name}' on host '{host_name}' has conflicting metrics_path values. "
+                            f"Existing '{scrape['metrics_path']}', target[{target_index}] implies '{parsed_metrics_path}'."
+                        )
             if target.get("labels") is not None:
                 validate_labels_map(
                     target["labels"],
@@ -548,10 +714,19 @@ def validate_scrape(scrape, scrape_name, host_name):
                 )
 
     if scrape_type == "metrics" and scrape.get("endpoint"):
-        scrape["endpoint"] = validate_metrics_address(
+        normalized_address, parsed_metrics_path = validate_metrics_address(
             scrape["endpoint"],
             f"Scrape '{scrape_name}' on host '{host_name}' endpoint",
         )
+        scrape["endpoint"] = normalized_address
+        if parsed_metrics_path:
+            if scrape.get("metrics_path") is None:
+                scrape["metrics_path"] = parsed_metrics_path
+            elif scrape.get("metrics_path") != parsed_metrics_path:
+                error(
+                    f"Scrape '{scrape_name}' on host '{host_name}' has conflicting metrics_path values. "
+                    f"Existing '{scrape['metrics_path']}', endpoint implies '{parsed_metrics_path}'."
+                )
 
 
 def resolve_scrapes_for_host(host, scrapes, stacks, host_name):
@@ -638,7 +813,15 @@ def render_configmap(host_name, config_text, name_template, namespace, config_ke
 
 
 def generate_config(
-    host_name, hosts, endpoints, scrapes, stacks, template, include_timestamp
+    host_name,
+    hosts,
+    endpoints,
+    scrapes,
+    stacks,
+    template,
+    include_timestamp,
+    host_label_policy,
+    label_policy_mode,
 ):
     """Generate Alloy config for a specific host."""
     if host_name not in hosts:
@@ -646,8 +829,11 @@ def generate_config(
         error(f"Host '{host_name}' not found. Available hosts: {available}")
 
     host = copy.deepcopy(hosts[host_name])
-    host.setdefault("extra_labels", {})
-    validate_labels_map(host["extra_labels"], f"Host '{host_name}' extra_labels")
+    host["resolved_extra_labels"] = resolve_host_extra_labels(
+        host_name,
+        host,
+        host_label_policy,
+    )
 
     host_scrapes = resolve_scrapes_for_host(host, scrapes, stacks, host_name)
     required_signals = compute_required_signals(host_scrapes)
@@ -666,6 +852,18 @@ def generate_config(
                 )
             seen_endpoint_ids[endpoint["id"]] = endpoint.get("name")
 
+    host_policy_relabel_id = None
+    if label_policy_mode == "relabel":
+        used_relabel_ids = {
+            scrape["id"]
+            for scrape in host_scrapes
+            if scrape.get("type") in PROM_RELABEL_SCRAPE_TYPES
+        }
+        host_policy_relabel_id = allocate_unique_identifier(
+            "host_policy",
+            used_relabel_ids,
+        )
+
     timestamp = None
     if include_timestamp:
         timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -676,6 +874,8 @@ def generate_config(
         prometheus_endpoints=endpoints_to_use.get("prometheus", []),
         scrapes=host_scrapes,
         timestamp=timestamp,
+        label_policy_mode=label_policy_mode,
+        host_policy_relabel_id=host_policy_relabel_id,
     )
 
     return normalize_text(rendered)
@@ -811,6 +1011,12 @@ def parse_args():
         help="Include hosts marked enabled: false",
     )
     parser.add_argument(
+        "--label-policy-mode",
+        choices=["static", "relabel"],
+        default="static",
+        help="How to apply host labels for metrics: static per-scrape rules or a shared relabel policy component",
+    )
+    parser.add_argument(
         "--clean",
         action="store_true",
         help="Remove generated outputs for hosts that are not part of this run",
@@ -898,6 +1104,7 @@ def main():
     scrapes = load_all_definitions("scrapes", args.resolve_env, definitions_dir)
     hosts = load_all_definitions("hosts", args.resolve_env, definitions_dir)
     stacks = load_all_definitions("stacks", args.resolve_env, definitions_dir)
+    host_label_policy = load_host_label_policy(definitions_dir, args.resolve_env)
 
     # Load templates
     template = Template(read_template_text("config.alloy.j2"))
@@ -970,6 +1177,8 @@ def main():
             stacks=stacks,
             template=template,
             include_timestamp=args.include_timestamp,
+            host_label_policy=host_label_policy,
+            label_policy_mode=args.label_policy_mode,
         )
 
         host_outputs = {}
@@ -1046,6 +1255,7 @@ def main():
         "format": args.format,
         "resolve_env": args.resolve_env,
         "include_timestamp": args.include_timestamp,
+        "label_policy_mode": args.label_policy_mode,
         "configmap_name_template": args.configmap_name_template,
         "configmap_key": args.configmap_key,
         "namespace": args.namespace,

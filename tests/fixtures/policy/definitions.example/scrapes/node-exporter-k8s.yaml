@@ -1,0 +1,6 @@
+name: node-exporter-k8s
+type: metrics-k8s
+role: pod
+metrics_path: /metrics
+labels:
+  job: node-exporter

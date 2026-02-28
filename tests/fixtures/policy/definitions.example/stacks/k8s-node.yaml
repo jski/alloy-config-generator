@@ -1,0 +1,3 @@
+name: k8s-node
+scrapes:
+  - node-exporter-k8s

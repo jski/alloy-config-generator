@@ -1,0 +1,5 @@
+name: node-exporter-docker
+type: metrics
+endpoint: https://localhost:9100/metrics
+labels:
+  job: node-exporter
