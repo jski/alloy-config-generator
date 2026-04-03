@@ -8,6 +8,7 @@ configmap_name: alloy-config-optimus
 
 scrapes:
   - pihole-metrics
+  - unifi-activity-logs
 
 endpoints:
   prometheus:

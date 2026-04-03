@@ -50,6 +50,7 @@ RELABEL_ACTIONS_REQUIRE_TARGET_LABEL = {
     "uppercase",
 }
 METRICS_SCRAPE_TYPES = {"metrics", "metrics-k8s", "metrics-k8s-pods"}
+LOGS_SCRAPE_TYPES = {"logs", "logs-journal", "logs-k8s", "logs-syslog"}
 PROM_RELABEL_SCRAPE_TYPES = {
     "metrics",
     "metrics-k8s",
@@ -548,7 +549,7 @@ def compute_required_signals(scrapes):
     required = set()
     for scrape in scrapes:
         scrape_type = scrape.get("type")
-        if scrape_type in {"logs", "logs-journal", "logs-k8s"}:
+        if scrape_type in LOGS_SCRAPE_TYPES:
             required.add("loki")
         if scrape_type in {"metrics", "metrics-k8s", "metrics-k8s-pods"}:
             required.add("prometheus")
@@ -622,6 +623,7 @@ def validate_scrape(scrape, scrape_name, host_name):
         "logs",
         "logs-journal",
         "logs-k8s",
+        "logs-syslog",
         "metrics",
         "metrics-k8s",
         "metrics-k8s-pods",
@@ -672,6 +674,56 @@ def validate_scrape(scrape, scrape_name, host_name):
 
     if scrape_type == "logs-k8s":
         scrape.setdefault("role", "pod")
+
+    if scrape_type == "logs-syslog":
+        listener_address = scrape.get("listener_address")
+        if not isinstance(listener_address, str) or not listener_address.strip():
+            error(
+                f"Scrape '{scrape_name}' on host '{host_name}' must define "
+                "'listener_address' as host:port"
+            )
+        scrape["listener_address"] = listener_address.strip()
+
+        protocol = scrape.setdefault("protocol", "udp")
+        if protocol not in {"tcp", "udp"}:
+            error(
+                f"Scrape '{scrape_name}' on host '{host_name}' has unsupported "
+                f"protocol '{protocol}'. Allowed: tcp, udp"
+            )
+
+        syslog_format = scrape.setdefault("syslog_format", "raw")
+        if syslog_format not in {"rfc5424", "rfc3164", "raw"}:
+            error(
+                f"Scrape '{scrape_name}' on host '{host_name}' has unsupported "
+                f"syslog_format '{syslog_format}'. Allowed: rfc5424, rfc3164, raw"
+            )
+
+        if scrape.get("listener_labels") is None:
+            scrape["listener_labels"] = {}
+        validate_labels_map(
+            scrape["listener_labels"],
+            f"Scrape '{scrape_name}' listener_labels",
+        )
+
+        if scrape.get("relabel_rules") is None:
+            scrape["relabel_rules"] = [
+                {
+                    "action": "labelmap",
+                    "regex": "__syslog_(.+)",
+                }
+            ]
+
+        if syslog_format == "raw":
+            for forbidden in (
+                "use_incoming_timestamp",
+                "rfc3164_default_to_current_year",
+                "use_rfc5424_message",
+            ):
+                if forbidden in scrape:
+                    error(
+                        f"Scrape '{scrape_name}' on host '{host_name}' cannot set "
+                        f"'{forbidden}' when syslog_format is 'raw'"
+                    )
 
     if scrape.get("relabel_rules") is not None:
         validate_relabel_rules(

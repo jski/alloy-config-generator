@@ -159,6 +159,20 @@ targets:
     address: node-b:9100
 ```
 
+Syslog listener scrape:
+```yaml
+name: unifi-activity-logs
+type: logs-syslog
+listener_address: 0.0.0.0:5514
+protocol: udp
+syslog_format: raw
+listener_labels:
+  listener: unifi-activity-logging
+labels:
+  job: unifi-activity-logs
+  component: unifi
+```
+
 Centralized host labels (optional `definitions/host-label-policy.yaml`):
 ```yaml
 defaults:
