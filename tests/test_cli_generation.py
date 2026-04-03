@@ -255,6 +255,146 @@ def test_logs_journal_uses_identifier_safe_component_names(tmp_path):
     assert "prometheus.remote_write.shockwave-grafana.receiver" not in alloy_text
 
 
+def test_logs_syslog_renders_listener_and_static_labels(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - unifi-activity",
+                "extra_labels:",
+                "  site: lan",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "unifi-activity.yaml").write_text(
+        "\n".join(
+            [
+                "name: unifi-activity",
+                "type: logs-syslog",
+                "listener_address: 0.0.0.0:5514",
+                "protocol: udp",
+                "syslog_format: raw",
+                "max_message_length: 65536",
+                "listener_labels:",
+                "  protocol: udp",
+                "  listener: unifi-activity-logging",
+                "labels:",
+                "  job: unifi-activity",
+                "  component: unifi",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "loki:",
+                "  enabled: true",
+                "  url: https://loki.example.com/loki/api/v1/push",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "out"
+    cmd = [
+        sys.executable,
+        "-m",
+        "alloy_config_generator",
+        "--all",
+        "--output-dir",
+        str(out_dir),
+        "--definitions-dir",
+        str(defs),
+        "--format",
+        "alloy",
+        "--no-manifest",
+    ]
+    subprocess.run(cmd, check=True)
+
+    alloy_text = (out_dir / "demo.alloy").read_text(encoding="utf-8")
+    assert 'loki.relabel "unifi_activity_syslog"' in alloy_text
+    assert 'loki.source.syslog "unifi_activity"' in alloy_text
+    assert 'address = "0.0.0.0:5514"' in alloy_text
+    assert 'protocol = "udp"' in alloy_text
+    assert 'syslog_format = "raw"' in alloy_text
+    assert "max_message_length = 65536" in alloy_text
+    assert 'listener = "unifi-activity-logging"' in alloy_text
+    assert 'regex = "__syslog_(.+)"' in alloy_text
+    assert 'component = "unifi"' in alloy_text
+    assert 'site = "lan"' in alloy_text
+
+
+def test_logs_syslog_rejects_forbidden_raw_options(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+
+    (defs / "hosts" / "demo.yaml").write_text(
+        "\n".join(
+            [
+                "name: demo",
+                "description: Demo host",
+                "deployment_type: docker",
+                "endpoint: local",
+                "scrapes:",
+                "  - syslog",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "syslog.yaml").write_text(
+        "\n".join(
+            [
+                "name: syslog",
+                "type: logs-syslog",
+                "listener_address: 0.0.0.0:5514",
+                "syslog_format: raw",
+                "use_incoming_timestamp: true",
+                "labels:",
+                "  job: syslog",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "local.yaml").write_text(
+        "\n".join(
+            [
+                "name: local",
+                "loki:",
+                "  enabled: true",
+                "  url: https://loki.example.com/loki/api/v1/push",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    result = run_cli_with_definitions(defs, tmp_path / "out", capture_output=True)
+    assert result.returncode != 0
+    assert (
+        "cannot set 'use_incoming_timestamp' when syslog_format is 'raw'"
+        in result.stdout
+    )
+
+
 def test_rejects_invalid_label_names(tmp_path):
     defs = tmp_path / "definitions"
     (defs / "hosts").mkdir(parents=True)

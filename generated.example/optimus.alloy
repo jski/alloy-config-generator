@@ -354,6 +354,59 @@ prometheus.relabel "pihole_metrics" {
 
 
 
+// 
+// ========== SCRAPE: unifi-activity-logs ==========
+// Type: logs-syslog
+// Description: Receive UniFi activity or gateway events over syslog
+
+//
+
+loki.relabel "unifi_activity_logs_syslog" {
+  forward_to = []
+
+  rule {
+    action = "labelmap"
+    regex = "__syslog_(.+)"
+  }
+}
+
+loki.source.syslog "unifi_activity_logs" {
+  listener {
+    address = "0.0.0.0:5514"
+    protocol = "udp"
+    syslog_format = "raw"
+    max_message_length = 65536
+    labels = {
+      protocol = "udp",
+      listener = "unifi-activity-logging",
+    }
+  }
+  relabel_rules = loki.relabel.unifi_activity_logs_syslog.rules
+  forward_to    = [loki.process.unifi_activity_logs.receiver]
+}
+
+loki.process "unifi_activity_logs" {
+  forward_to = [
+    loki.write.optimus_grafana.receiver,
+    loki.write.bumblebee_grafana.receiver,
+  ]
+
+  stage.static_labels {
+    values = {
+      job = "unifi-activity-logs",
+      component = "unifi",
+      source = "unifi-network",
+      env = "homelab",
+      site = "lan",
+      platform = "linux",
+      role = "docker",
+      host = "optimus",
+    }
+  }
+}
+
+
+
 
 // ========== RECEIVERS ==========
 

@@ -1,0 +1,17 @@
+name: unifi-activity-logs
+type: logs-syslog
+description: Receive UniFi activity or gateway events over syslog
+
+listener_address: 0.0.0.0:5514
+protocol: udp
+syslog_format: raw
+max_message_length: 65536
+
+listener_labels:
+  protocol: udp
+  listener: unifi-activity-logging
+
+labels:
+  job: unifi-activity-logs
+  component: unifi
+  source: unifi-network

@@ -336,6 +336,86 @@ prometheus.relabel "{{ scrape.id }}" {
 {%- endif %}
 }
 
+{% elif scrape.type == 'logs-syslog' %}
+loki.relabel "{{ scrape.id }}_syslog" {
+  forward_to = []
+{%- for rule in scrape.relabel_rules %}
+
+  rule {
+{%- if rule.source_labels %}
+    source_labels = [{% for label in rule.source_labels %}"{{ label }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+    action = "{{ rule.action }}"
+{%- if rule.regex %}
+    regex = "{{ rule.regex }}"
+{%- endif %}
+{%- if rule.target_label %}
+    target_label = "{{ rule.target_label }}"
+{%- endif %}
+{%- if rule.replacement %}
+    replacement = "{{ rule.replacement }}"
+{%- endif %}
+{%- if rule.modulus is defined %}
+    modulus = {{ rule.modulus }}
+{%- endif %}
+  }
+{%- endfor %}
+}
+
+loki.source.syslog "{{ scrape.id }}" {
+  listener {
+    address = "{{ scrape.listener_address }}"
+    protocol = "{{ scrape.protocol }}"
+    syslog_format = "{{ scrape.syslog_format }}"
+{%- if scrape.label_structured_data is defined %}
+    label_structured_data = {{ "true" if scrape.label_structured_data else "false" }}
+{%- endif %}
+{%- if scrape.idle_timeout %}
+    idle_timeout = "{{ scrape.idle_timeout }}"
+{%- endif %}
+{%- if scrape.max_message_length %}
+    max_message_length = {{ scrape.max_message_length }}
+{%- endif %}
+{%- if scrape.use_incoming_timestamp is defined %}
+    use_incoming_timestamp = {{ "true" if scrape.use_incoming_timestamp else "false" }}
+{%- endif %}
+{%- if scrape.use_rfc5424_message is defined %}
+    use_rfc5424_message = {{ "true" if scrape.use_rfc5424_message else "false" }}
+{%- endif %}
+{%- if scrape.rfc3164_default_to_current_year is defined %}
+    rfc3164_default_to_current_year = {{ "true" if scrape.rfc3164_default_to_current_year else "false" }}
+{%- endif %}
+{%- if scrape.listener_labels %}
+    labels = {
+{%- for key, value in scrape.listener_labels.items() %}
+      {{ key }} = "{{ value }}",
+{%- endfor %}
+    }
+{%- endif %}
+  }
+  relabel_rules = loki.relabel.{{ scrape.id }}_syslog.rules
+  forward_to    = [loki.process.{{ scrape.id }}.receiver]
+}
+
+loki.process "{{ scrape.id }}" {
+  forward_to = [
+{%- for endpoint in loki_endpoints %}
+    loki.write.{{ endpoint.id }}.receiver,
+{%- endfor %}
+  ]
+
+  stage.static_labels {
+    values = {
+{%- for key, value in scrape.labels.items() %}
+      {{ key }} = "{{ value }}",
+{%- endfor %}
+{%- for key, value in host.resolved_extra_labels.items() %}
+      {{ key }} = "{{ value }}",
+{%- endfor %}
+    }
+  }
+}
+
 {% elif scrape.type == 'logs-k8s' %}
 discovery.kubernetes "{{ scrape.id }}" {
   role = "{{ scrape.role }}"
