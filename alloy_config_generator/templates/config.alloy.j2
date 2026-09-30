@@ -487,10 +487,46 @@ loki.process "{{ scrape.id }}" {
 {% elif scrape.type == 'metrics-k8s-pods' %}
 discovery.kubernetes "{{ scrape.id }}" {
   role = "{{ scrape.role }}"
+{% if scrape.namespaces %}
+  namespaces {
+    names = [{% for namespace in scrape.namespaces %}"{{ namespace }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+  }
+{% endif %}
 }
 
+{% if scrape.target_relabel_rules %}
+discovery.relabel "{{ scrape.id }}" {
+  targets = discovery.kubernetes.{{ scrape.id }}.targets
+{%- for rule in scrape.target_relabel_rules %}
+
+  rule {
+{%- if rule.source_labels %}
+    source_labels = [{% for label in rule.source_labels %}"{{ label }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+    action = "{{ rule.action or 'replace' }}"
+{%- if rule.regex %}
+    regex = "{{ rule.regex }}"
+{%- endif %}
+{%- if rule.target_label %}
+    target_label = "{{ rule.target_label }}"
+{%- endif %}
+{%- if rule.replacement %}
+    replacement = "{{ rule.replacement }}"
+{%- endif %}
+{%- if rule.separator %}
+    separator = "{{ rule.separator }}"
+{%- endif %}
+  }
+{%- endfor %}
+}
+{% endif %}
+
 prometheus.scrape "{{ scrape.id }}" {
+{% if scrape.target_relabel_rules %}
+  targets    = discovery.relabel.{{ scrape.id }}.output
+{% else %}
   targets    = discovery.kubernetes.{{ scrape.id }}.targets
+{% endif %}
   forward_to = [prometheus.relabel.{{ scrape.id }}.receiver]
   scrape_interval = "{{ scrape.scrape_interval }}"
 {% if scrape.metrics_path %}
