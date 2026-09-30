@@ -75,10 +75,15 @@ prometheus.relabel "alloy_self" {
 
 discovery.kubernetes "k8s_pod_logs_kubernetes" {
   role = "pod"
+
 }
 
+
+
 loki.source.kubernetes "k8s_pod_logs_kubernetes" {
+
   targets    = discovery.kubernetes.k8s_pod_logs_kubernetes.targets
+
   forward_to = [loki.process.k8s_pod_logs_kubernetes.receiver]
 }
 
