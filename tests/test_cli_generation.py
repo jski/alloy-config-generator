@@ -94,6 +94,43 @@ def test_generates_alloy_and_configmap(tmp_path):
     assert "config.alloy: |-" in configmap_text
 
 
+def test_pod_metrics_discovery_can_be_namespace_and_port_scoped(tmp_path):
+    defs = tmp_path / "definitions"
+    (defs / "hosts").mkdir(parents=True)
+    (defs / "scrapes").mkdir(parents=True)
+    (defs / "endpoints").mkdir(parents=True)
+    (defs / "hosts" / "demo.yaml").write_text(
+        "name: demo\ndescription: Demo\ndeployment_type: kubernetes\n"
+        "scrapes: [traefik]\nendpoints:\n  prometheus: [remote]\n",
+        encoding="utf-8",
+    )
+    (defs / "scrapes" / "traefik.yaml").write_text(
+        "name: traefik\ntype: metrics-k8s-pods\ndescription: Traefik metrics\n"
+        "deployment_type: kubernetes\nnamespaces: [traefik]\n"
+        "scrape_interval: 10s\nmetrics_path: /metrics\n"
+        "target_relabel_rules:\n"
+        "  - source_labels: [__meta_kubernetes_pod_container_port_name]\n"
+        "    action: keep\n    regex: metrics\n"
+        "labels:\n  job: traefik\n",
+        encoding="utf-8",
+    )
+    (defs / "endpoints" / "remote.yaml").write_text(
+        "name: remote\nprometheus:\n  enabled: true\n"
+        "  url: https://prom.example.com/api/v1/write\n",
+        encoding="utf-8",
+    )
+
+    out_dir = tmp_path / "out"
+    result = run_cli_with_definitions(defs, out_dir)
+    assert result.returncode == 0, result.stdout
+    generated = (out_dir / "demo.alloy").read_text(encoding="utf-8")
+    assert 'discovery.kubernetes "traefik"' in generated
+    assert 'names = ["traefik"]' in generated
+    assert 'source_labels = ["__meta_kubernetes_pod_container_port_name"]' in generated
+    assert 'regex = "metrics"' in generated
+    assert "targets    = discovery.relabel.traefik.output" in generated
+
+
 def test_generates_argocd_app(tmp_path):
     out_dir = run_cli(
         tmp_path,

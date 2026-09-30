@@ -672,8 +672,23 @@ def validate_scrape(scrape, scrape_name, host_name):
         scrape.setdefault("max_age", "12h0m0s")
         scrape.setdefault("relabel_rules", [])
 
-    if scrape_type == "logs-k8s":
+    if scrape_type in {"logs-k8s", "metrics-k8s-pods"}:
         scrape.setdefault("role", "pod")
+        namespaces = scrape.get("namespaces", [])
+        if not isinstance(namespaces, list) or any(
+            not isinstance(namespace, str) or not namespace.strip()
+            for namespace in namespaces
+        ):
+            error(
+                f"Scrape '{scrape_name}' on host '{host_name}' namespaces "
+                "must be a list of non-empty strings"
+            )
+        scrape["namespaces"] = [
+            escape_alloy_quoted_string(namespace) for namespace in namespaces
+        ]
+
+    if scrape_type == "metrics-k8s-pods":
+        scrape.setdefault("target_relabel_rules", [])
 
     if scrape_type == "logs-syslog":
         listener_address = scrape.get("listener_address")

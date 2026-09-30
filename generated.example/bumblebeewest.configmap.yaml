@@ -88,8 +88,12 @@ data:
       role = "pod"
     }
 
+
+
     loki.source.kubernetes "k8s_pod_logs_kubernetes" {
+
       targets    = discovery.kubernetes.k8s_pod_logs_kubernetes.targets
+
       forward_to = [loki.process.k8s_pod_logs_kubernetes.receiver]
     }
 
@@ -121,7 +125,10 @@ data:
 
     discovery.kubernetes "k8s_pod_metrics_kubernetes" {
       role = "pod"
+
     }
+
+
 
     prometheus.scrape "k8s_pod_metrics_kubernetes" {
       targets    = discovery.kubernetes.k8s_pod_metrics_kubernetes.targets

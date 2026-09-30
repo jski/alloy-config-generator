@@ -207,6 +207,33 @@ for mixed Docker + Kubernetes environments.
 
 ## Output Formats
 
+For Kubernetes Pod logs, a `logs-k8s` scrape can limit discovery to named
+namespaces and use `relabel_rules` to select containers and preserve useful
+Loki labels:
+
+```yaml
+name: website-pod-logs
+type: logs-k8s
+role: pod
+namespaces:
+  - websites
+relabel_rules:
+  - source_labels: [__meta_kubernetes_pod_container_name]
+    action: keep
+    regex: 'main-site|wedding-site'
+  - source_labels: [__meta_kubernetes_namespace]
+    action: replace
+    target_label: namespace
+  - source_labels: [__meta_kubernetes_pod_container_name]
+    action: replace
+    target_label: container
+labels:
+  job: website-pod-logs
+```
+
+When `namespaces` and `relabel_rules` are omitted, `logs-k8s` keeps its
+existing cluster-wide discovery behavior.
+
 ```bash
 alloygen host-01 --format alloy
 alloygen host-01 --format configmap --namespace monitoring
