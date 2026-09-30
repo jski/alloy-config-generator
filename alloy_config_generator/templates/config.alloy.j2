@@ -419,10 +419,49 @@ loki.process "{{ scrape.id }}" {
 {% elif scrape.type == 'logs-k8s' %}
 discovery.kubernetes "{{ scrape.id }}" {
   role = "{{ scrape.role }}"
+{% if scrape.namespaces %}
+  namespaces {
+    names = [{% for namespace in scrape.namespaces %}"{{ namespace }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+  }
+{% endif %}
 }
 
+{% if scrape.relabel_rules %}
+discovery.relabel "{{ scrape.id }}" {
+  targets = discovery.kubernetes.{{ scrape.id }}.targets
+{%- for rule in scrape.relabel_rules %}
+
+  rule {
+{%- if rule.source_labels %}
+    source_labels = [{% for label in rule.source_labels %}"{{ label }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{%- endif %}
+    action = "{{ rule.action or 'replace' }}"
+{%- if rule.regex %}
+    regex = "{{ rule.regex }}"
+{%- endif %}
+{%- if rule.target_label %}
+    target_label = "{{ rule.target_label }}"
+{%- endif %}
+{%- if rule.replacement %}
+    replacement = "{{ rule.replacement }}"
+{%- endif %}
+{%- if rule.separator %}
+    separator = "{{ rule.separator }}"
+{%- endif %}
+{%- if rule.modulus is defined %}
+    modulus = {{ rule.modulus }}
+{%- endif %}
+  }
+{%- endfor %}
+}
+{% endif %}
+
 loki.source.kubernetes "{{ scrape.id }}" {
+{% if scrape.relabel_rules %}
+  targets    = discovery.relabel.{{ scrape.id }}.output
+{% else %}
   targets    = discovery.kubernetes.{{ scrape.id }}.targets
+{% endif %}
   forward_to = [loki.process.{{ scrape.id }}.receiver]
 }
 
