@@ -419,11 +419,11 @@ loki.process "{{ scrape.id }}" {
 {% elif scrape.type == 'logs-k8s' %}
 discovery.kubernetes "{{ scrape.id }}" {
   role = "{{ scrape.role }}"
-{% if scrape.namespaces %}
+{%- if scrape.namespaces %}
   namespaces {
     names = [{% for namespace in scrape.namespaces %}"{{ namespace }}"{% if not loop.last %}, {% endif %}{% endfor %}]
   }
-{% endif %}
+{%- endif %}
 }
 
 {% if scrape.relabel_rules %}
@@ -522,11 +522,11 @@ discovery.relabel "{{ scrape.id }}" {
 {% endif %}
 
 prometheus.scrape "{{ scrape.id }}" {
-{% if scrape.target_relabel_rules %}
+{%- if scrape.target_relabel_rules %}
   targets    = discovery.relabel.{{ scrape.id }}.output
-{% else %}
+{%- else %}
   targets    = discovery.kubernetes.{{ scrape.id }}.targets
-{% endif %}
+{%- endif %}
   forward_to = [prometheus.relabel.{{ scrape.id }}.receiver]
   scrape_interval = "{{ scrape.scrape_interval }}"
 {% if scrape.metrics_path %}
