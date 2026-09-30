@@ -128,7 +128,7 @@ def test_pod_metrics_discovery_can_be_namespace_and_port_scoped(tmp_path):
     assert 'names = ["traefik"]' in generated
     assert 'source_labels = ["__meta_kubernetes_pod_container_port_name"]' in generated
     assert 'regex = "metrics"' in generated
-    assert 'targets    = discovery.relabel.traefik.output' in generated
+    assert "targets    = discovery.relabel.traefik.output" in generated
 
 
 def test_generates_argocd_app(tmp_path):
